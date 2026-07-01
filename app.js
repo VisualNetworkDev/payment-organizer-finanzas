@@ -754,7 +754,7 @@ async function renderBills(force = false) {
         </div>
         <div class="simple-list">
           ${upcoming.slice(0, 6).map((bill) => `
-            <div>
+            <div class="bill-payment-item" data-bill-id="${escapeAttr(bill.billId)}" data-due="${escapeAttr(bill.dueDate)}">
               <span>${dateLabel(bill.dueDate)}</span>
               <strong>${escapeHtml(bill.name)} - ${money(bill.remaining)}</strong>
               <small>${escapeHtml(bill.status || 'pendiente')}</small>
@@ -779,6 +779,8 @@ async function renderBillsAdvanced(force = false) {
   const upcoming = sortByDateAsc(data.upcoming || [], 'dueDate');
   const accounts = data.accounts || [];
   state.cache.accounts = accounts;
+  state.cache.bills = bills;
+  state.cache.upcomingBills = upcoming;
 
   $('#view').innerHTML = `
     <section class="grid">
@@ -805,7 +807,7 @@ async function renderBillsAdvanced(force = false) {
         <div class="panel-head"><h3>Pagos proximos</h3></div>
         <div class="list">
           ${upcoming.map((bill) => `
-            <article class="item-card alert ${bill.remaining <= 0 ? 'green' : levelClass(bill.priority)}">
+            <article class="item-card alert bill-payment-item ${bill.remaining <= 0 ? 'green' : levelClass(bill.priority)}" data-bill-id="${escapeAttr(bill.billId)}" data-due="${escapeAttr(bill.dueDate)}">
               <div class="item-row">
                 <div>
                   <strong>${escapeHtml(bill.name)}</strong>
@@ -1231,29 +1233,40 @@ async function submitBill(event) {
 
 async function submitBillPaid(event) {
   event.preventDefault();
+  const form = event.currentTarget;
+  const payment = {
+    billId: form.dataset.id,
+    dueDate: form.dataset.due,
+    amount: Number(formValues(form).amount || form.dataset.amount || 0),
+    full: true
+  };
   await guarded(async () => {
-    const form = event.currentTarget;
-    await api('markBillPaid', {
-      billId: form.dataset.id,
-      dueDate: form.dataset.due,
-      ...formValues(form)
-    });
-    toast('Pago marcado.');
-    renderView('bills', true);
+    setFormDisabled(form, true);
+    await api('markBillPaid', payment);
+    confirmPaymentSaved(payment);
   });
+  setFormDisabled(form, false);
 }
 
 async function submitBillPartial(event) {
   const form = event.currentTarget.closest('form');
+  const values = formValues(form);
+  const payment = {
+    billId: form.dataset.id,
+    dueDate: form.dataset.due,
+    amount: Number(values.amount || 0),
+    full: false
+  };
   await guarded(async () => {
+    setFormDisabled(form, true);
     await api('markBillPartial', {
-      billId: form.dataset.id,
-      dueDate: form.dataset.due,
-      partialAmount: formValues(form).amount
+      billId: payment.billId,
+      dueDate: payment.dueDate,
+      partialAmount: payment.amount
     });
-    toast('Pago parcial registrado.');
-    renderView('bills', true);
+    confirmPaymentSaved(payment);
   });
+  setFormDisabled(form, false);
 }
 
 async function submitDebt(event) {
@@ -1431,13 +1444,18 @@ function openPaymentModal(daughterOnly) {
     const [billId, dueDate] = String(values.billKey || '').split('|');
     const bill = upcoming.find((item) => item.billId === billId && item.dueDate === dueDate);
     const amount = Number(values.amount || 0);
+    const payment = {
+      billId,
+      dueDate,
+      amount,
+      full: Boolean(bill && amount >= Number(bill.remaining || bill.amount || 0))
+    };
     if (bill && amount >= Number(bill.remaining || bill.amount || 0)) {
       await api('markBillPaid', { billId, dueDate, amount });
     } else {
       await api('markBillPartial', { billId, dueDate, partialAmount: amount });
     }
-    toast('Pago registrado.');
-    await renderView(state.activeView, true);
+    confirmPaymentSaved(payment);
   });
 }
 
@@ -1467,25 +1485,141 @@ async function openPaycheckModal() {
     } else {
       await api('verifyPaycheck', { id: values.id, netActual: values.netActual });
     }
-    toast('Cheque actualizado.');
-    await renderView(state.activeView, true);
+    confirmActionDone('Cheque actualizado', 'Quedo marcado. La informacion se sincroniza sola.');
+    removePendingPaycheckLocally(values.id);
+    refreshViewsQuietly('today', state.activeView);
   });
 }
 
 async function markGasCovered() {
   await guarded(async () => {
     await api('markGasCovered');
-    toast('Gasolina marcada como cubierta.');
-    await renderView('today', true);
+    confirmActionDone('Gasolina cubierta', 'Quedo marcado. Ya no se debe tratar como pendiente.');
+    refreshViewsQuietly('today');
   });
 }
 
 async function markPhoneInternetReserved() {
   await guarded(async () => {
     await api('markPhoneInternetReserved');
-    toast('Telefono e internet marcados como reservados.');
-    await renderView('today', true);
+    confirmActionDone('Telefono e internet reservados', 'Quedo marcado. La pantalla se actualiza sola.');
+    refreshViewsQuietly('today');
   });
+}
+
+function confirmPaymentSaved(payment) {
+  const bill = findCachedBill(payment.billId, payment.dueDate);
+  const name = bill?.name || 'Pago';
+  applyLocalBillPayment(payment);
+  markBillPaymentItem(payment, name);
+  confirmActionDone(
+    payment.full ? 'Pago registrado' : 'Pago parcial registrado',
+    `${name} quedo guardado por ${money(payment.amount)}. ${payment.full ? 'Ya no queda como pendiente.' : 'Se desconto el monto pagado.'}`
+  );
+  refreshViewsQuietly('today', 'bills');
+}
+
+function confirmActionDone(title, detail) {
+  toast(title, {
+    type: 'success',
+    icon: 'check-circle-2',
+    detail
+  });
+}
+
+function findCachedBill(billId, dueDate) {
+  const sources = [
+    state.cache.upcomingBills,
+    state.cache.today?.upcomingBills,
+    state.cache.dashboard?.upcomingBills
+  ];
+  for (const list of sources) {
+    const found = (list || []).find((bill) => sameBill(bill, billId, dueDate));
+    if (found) return found;
+  }
+  return null;
+}
+
+function sameBill(bill, billId, dueDate) {
+  return String(bill?.billId || bill?.id || '') === String(billId || '') && String(bill?.dueDate || '') === String(dueDate || '');
+}
+
+function applyLocalBillPayment(payment) {
+  const updateList = (list) => (list || []).map((bill) => {
+    if (!sameBill(bill, payment.billId, payment.dueDate)) return bill;
+    const currentRemaining = Number(bill.remaining || bill.amount || 0);
+    const remaining = payment.full ? 0 : Math.max(0, currentRemaining - Number(payment.amount || 0));
+    return {
+      ...bill,
+      remaining,
+      status: remaining <= 0 ? 'paid' : 'partial'
+    };
+  });
+
+  state.cache.upcomingBills = updateList(state.cache.upcomingBills);
+  if (state.cache.today?.upcomingBills) {
+    state.cache.today.upcomingBills = updateList(state.cache.today.upcomingBills);
+  }
+  if (state.cache.dashboard?.upcomingBills) {
+    state.cache.dashboard.upcomingBills = updateList(state.cache.dashboard.upcomingBills);
+  }
+}
+
+function markBillPaymentItem(payment, name) {
+  const title = payment.full ? 'Pago registrado' : 'Pago parcial registrado';
+  const detail = `${name} - ${money(payment.amount)} - ${dateLabel(payment.dueDate)}`;
+  $$('.bill-payment-item').forEach((item) => {
+    if (String(item.dataset.billId || '') !== String(payment.billId || '') || String(item.dataset.due || '') !== String(payment.dueDate || '')) {
+      return;
+    }
+    item.classList.add('payment-done');
+    item.innerHTML = `
+      <div class="payment-confirmed">
+        <i data-lucide="check-circle-2"></i>
+        <div>
+          <strong>${escapeHtml(title)}</strong>
+          <span>${escapeHtml(detail)}</span>
+        </div>
+      </div>
+    `;
+  });
+  refreshIcons();
+}
+
+function removePendingPaycheckLocally(id) {
+  const remove = (list) => (list || []).filter((paycheck) => String(paycheck.id || '') !== String(id || ''));
+  if (state.cache.today?.pendingPaychecks) {
+    state.cache.today.pendingPaychecks = remove(state.cache.today.pendingPaychecks);
+  }
+  if (state.cache.dashboard?.pendingPaychecks) {
+    state.cache.dashboard.pendingPaychecks = remove(state.cache.dashboard.pendingPaychecks);
+  }
+}
+
+function refreshViewsQuietly(...views) {
+  const allowed = new Set(['today', 'dashboard', 'accounts', 'incomes', 'paychecks', 'bills', 'debts', 'shifts', 'calendar', 'checklist', 'notifications', 'settings']);
+  Array.from(new Set(views))
+    .filter((view) => allowed.has(view))
+    .forEach((view) => {
+      apiCached('getViewData', viewPayload(view), { force: true, ttlMs: CONFIG.cacheTtlMs })
+        .then((data) => rememberViewData(view, data))
+        .catch((error) => console.warn('Background refresh failed:', error));
+    });
+}
+
+function rememberViewData(view, data) {
+  if (view === 'today') {
+    state.cache.today = data;
+    state.cache.dashboard = data;
+    state.cache.accounts = data.accounts || state.cache.accounts || [];
+    state.cache.incomeSources = data.incomeSources || state.cache.incomeSources || [];
+    return;
+  }
+  if (view === 'bills') {
+    state.cache.bills = data.bills || state.cache.bills || [];
+    state.cache.upcomingBills = sortByDateAsc(data.upcoming || [], 'dueDate').filter((bill) => Number(bill.remaining || 0) > 0);
+    state.cache.accounts = data.accounts || state.cache.accounts || [];
+  }
 }
 
 function openQuickModal(title, bodyHtml, onSubmit) {
@@ -1736,12 +1870,29 @@ function setFormDisabled(form, disabled) {
   });
 }
 
-function toast(message) {
+function toast(message, options = {}) {
+  if (typeof options === 'string') {
+    options = { type: options };
+  }
   const el = $('#toast');
-  el.textContent = message || '';
+  const type = options.type || 'info';
+  const hasRichContent = Boolean(options.icon || options.detail);
+  el.className = `toast ${type}${hasRichContent ? '' : ' plain'}`;
+  if (hasRichContent) {
+    el.innerHTML = `
+      ${options.icon ? `<i data-lucide="${escapeAttr(options.icon)}"></i>` : ''}
+      <div>
+        <strong>${escapeHtml(message || '')}</strong>
+        ${options.detail ? `<span>${escapeHtml(options.detail)}</span>` : ''}
+      </div>
+    `;
+  } else {
+    el.textContent = message || '';
+  }
   el.classList.remove('hidden');
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => el.classList.add('hidden'), 4200);
+  refreshIcons();
 }
 
 function refreshIcons() {

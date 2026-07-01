@@ -749,12 +749,46 @@ th {
   z-index: 50;
   right: 18px;
   bottom: 18px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 10px;
   max-width: min(380px, calc(100vw - 36px));
   border-radius: var(--radius);
   padding: 12px 14px;
   color: #fff;
   background: #111827;
   box-shadow: var(--shadow);
+}
+
+.toast.success {
+  background: #065f46;
+}
+
+.toast.error {
+  background: #991b1b;
+}
+
+.toast.plain {
+  display: block;
+}
+
+.toast svg {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+}
+
+.toast strong,
+.toast span {
+  display: block;
+}
+
+.toast span {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .busy {
@@ -1047,6 +1081,37 @@ th {
   padding: 16px;
   background: var(--panel);
   box-shadow: var(--shadow);
+}
+
+.bill-payment-item.payment-done {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.payment-confirmed {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 10px;
+  color: #064e3b;
+}
+
+.payment-confirmed svg {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+
+.payment-confirmed strong,
+.payment-confirmed span {
+  display: block;
+}
+
+.payment-confirmed span {
+  margin-top: 3px;
+  color: #166534;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 @keyframes spin {
