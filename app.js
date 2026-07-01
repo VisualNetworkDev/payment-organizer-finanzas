@@ -216,7 +216,6 @@ async function renderView(viewId, force = false) {
   const warm = hasWarmView(viewId) && !force;
   if (!warm) {
     $('#view').innerHTML = '<div class="empty">Cargando...</div>';
-    setBusy(true);
   }
 
   try {
@@ -238,9 +237,6 @@ async function renderView(viewId, force = false) {
   } catch (error) {
     $('#view').innerHTML = `<div class="empty">${escapeHtml(error.message || 'No se pudo cargar.')}</div>`;
   } finally {
-    if (!warm) {
-      setBusy(false);
-    }
     refreshIcons();
   }
 }
