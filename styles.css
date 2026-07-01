@@ -814,6 +814,241 @@ th {
   border-bottom: 1px solid var(--line);
 }
 
+.today-shell {
+  display: grid;
+  gap: 16px;
+  max-width: 1040px;
+}
+
+.today-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--info);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.today-hero.red {
+  border-left-color: var(--critical);
+}
+
+.today-hero.yellow {
+  border-left-color: var(--warning);
+}
+
+.today-hero.green {
+  border-left-color: var(--success);
+}
+
+.today-kicker {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.today-hero h3 {
+  margin: 6px 0;
+  font-size: 28px;
+}
+
+.today-hero p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.status-pill {
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 8px 11px;
+  color: #fff;
+  background: var(--info);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.status-pill.red {
+  background: var(--critical);
+}
+
+.status-pill.yellow {
+  background: var(--warning);
+}
+
+.status-pill.green {
+  background: var(--success);
+}
+
+.money-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.simple-money {
+  display: grid;
+  gap: 7px;
+  min-height: 118px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--info);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.simple-money.red {
+  border-left-color: var(--critical);
+}
+
+.simple-money.yellow {
+  border-left-color: var(--warning);
+}
+
+.simple-money.green {
+  border-left-color: var(--success);
+}
+
+.simple-money span,
+.simple-money small {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.simple-money strong {
+  font-size: 25px;
+}
+
+.today-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 14px;
+}
+
+.today-focus {
+  min-height: 210px;
+}
+
+.next-action {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 22px;
+}
+
+.mini-checklist,
+.simple-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mini-checklist div {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--text);
+}
+
+.mini-checklist svg {
+  width: 18px;
+  height: 18px;
+  color: var(--success);
+  flex: 0 0 auto;
+}
+
+.simple-list > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+}
+
+.simple-list span,
+.simple-list small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quick-button,
+.more-card {
+  display: grid;
+  gap: 9px;
+  align-content: center;
+  justify-items: start;
+  min-height: 104px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: 0 1px 2px rgba(23, 32, 42, 0.04);
+  cursor: pointer;
+}
+
+.quick-button:hover,
+.more-card:hover {
+  border-color: #b7c7dc;
+  background: #f8fafc;
+}
+
+.quick-button svg,
+.more-card svg {
+  width: 23px;
+  height: 23px;
+  color: var(--primary);
+}
+
+.quick-button span,
+.more-card span {
+  font-weight: 900;
+}
+
+.quick-secondary,
+.more-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.more-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(17, 24, 39, 0.42);
+}
+
+.quick-modal {
+  width: min(440px, 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -897,6 +1132,27 @@ th {
   .inline-form input,
   .inline-form select {
     width: 100%;
+  }
+
+  .today-hero {
+    display: grid;
+    padding: 18px;
+  }
+
+  .today-hero h3 {
+    font-size: 24px;
+  }
+
+  .money-strip,
+  .today-grid,
+  .quick-actions,
+  .more-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-button,
+  .more-card {
+    min-height: 84px;
   }
 
   .notice-panel {

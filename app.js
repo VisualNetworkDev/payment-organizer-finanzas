@@ -32,30 +32,38 @@ const MUTATING_ACTIONS = new Set([
   'resolveNotification',
   'importData',
   'saveSettings',
+  'markGasCovered',
+  'markPhoneInternetReserved',
   'saveWorkShift',
   'deleteWorkShift',
   'seedUserFinancialData'
 ]);
 
 const NAV = [
-  ['dashboard', 'Dashboard', 'layout-dashboard'],
-  ['accounts', 'Cuentas', 'wallet'],
-  ['incomes', 'Ingresos', 'banknote'],
+  ['today', 'Hoy', 'sparkles'],
   ['paychecks', 'Cheques', 'badge-dollar-sign'],
   ['bills', 'Pagos', 'receipt'],
+  ['money', 'Mi dinero', 'wallet'],
+  ['more', 'Mas', 'more-horizontal']
+];
+
+const MORE_NAV = [
+  ['accounts', 'Cuentas', 'wallet'],
   ['debts', 'Deudas', 'trending-down'],
   ['shifts', 'Turnos', 'clock'],
   ['calendar', 'Calendario', 'calendar-days'],
-  ['whatnow', 'Que hago ahora', 'circle-help'],
   ['checklist', 'Checklist', 'list-checks'],
   ['notifications', 'Alertas', 'bell'],
-  ['settings', 'Configuracion', 'settings']
+  ['settings', 'Configuracion', 'settings'],
+  ['backup', 'Backup', 'archive'],
+  ['dashboard', 'Resumen avanzado', 'layout-dashboard']
 ];
 
 const state = {
   token: localStorage.getItem('mcf_token') || '',
   user: null,
-  activeView: localStorage.getItem('mcf_view') || 'dashboard',
+  activeView: 'today',
+  simpleMode: localStorage.getItem('mcf_mode') !== 'advanced',
   cache: {},
   requestCache: {},
   inFlight: {},
@@ -94,7 +102,7 @@ function bindShell() {
 
 function renderNav() {
   $('#mainNav').innerHTML = NAV.map(([id, label, icon]) => `
-    <button class="nav-item ${id === state.activeView ? 'active' : ''}" data-view="${id}" type="button">
+    <button class="nav-item ${navIsActive(id) ? 'active' : ''}" data-view="${id}" type="button">
       <i data-lucide="${icon}"></i>
       <span>${label}</span>
     </button>
@@ -111,6 +119,19 @@ function renderNav() {
   });
 }
 
+function navIsActive(id) {
+  if (id === state.activeView) return true;
+  if (id === 'more') {
+    return MORE_NAV.some(([view]) => view === state.activeView) || state.activeView === 'incomes';
+  }
+  return false;
+}
+
+function navItem(viewId) {
+  return NAV.concat(MORE_NAV, [['incomes', 'Ingresos', 'banknote'], ['whatnow', 'Que hago ahora', 'circle-help']])
+    .find(([id]) => id === viewId);
+}
+
 async function validateSavedSession() {
   try {
     const data = await api('validateSession');
@@ -118,7 +139,7 @@ async function validateSavedSession() {
     state.cache.settings = data.settings || {};
     showApp();
     toggleForcedPassword(Boolean(state.user.mustChangePassword));
-    await renderView(state.activeView, true);
+    await renderView('today', true);
   } catch (error) {
     localStorage.removeItem('mcf_token');
     state.token = '';
@@ -145,7 +166,7 @@ async function handleLogin(event) {
     clearRequestCache();
     showApp();
     toggleForcedPassword(Boolean(state.user.mustChangePassword));
-    await renderView(state.user.mustChangePassword ? 'settings' : state.activeView, true);
+    await renderView(state.user.mustChangePassword ? 'settings' : 'today', true);
   } catch (error) {
     state.loginLockedUntil = Date.now() + CONFIG.loginCooldownMs;
     toast(error.message);
@@ -181,7 +202,7 @@ async function handleForcedPassword(event) {
     toggleForcedPassword(false);
     event.currentTarget.reset();
     toast('Contrasena actualizada.');
-    await renderView('dashboard', true);
+    await renderView('today', true);
   } catch (error) {
     toast(error.message);
   } finally {
@@ -208,9 +229,8 @@ function toggleForcedPassword(show) {
 
 async function renderView(viewId, force = false) {
   state.activeView = viewId;
-  localStorage.setItem('mcf_view', viewId);
   renderNav();
-  const item = NAV.find(([id]) => id === viewId) || NAV[0];
+  const item = navItem(viewId) || NAV[0];
   $('#eyebrow').textContent = item[1];
   $('#viewTitle').textContent = item[1];
   const warm = hasWarmView(viewId) && !force;
@@ -220,7 +240,11 @@ async function renderView(viewId, force = false) {
 
   try {
     const renderers = {
+      today: renderToday,
       dashboard: renderDashboard,
+      money: renderMoney,
+      more: renderMore,
+      backup: renderBackup,
       accounts: renderAccounts,
       incomes: renderIncomes,
       paychecks: renderPaychecks,
@@ -239,6 +263,89 @@ async function renderView(viewId, force = false) {
   } finally {
     refreshIcons();
   }
+}
+
+async function renderToday(force = false) {
+  const data = await getViewData('today', force);
+  state.cache.today = data;
+  state.cache.dashboard = data;
+  state.cache.accounts = data.accounts || [];
+  state.cache.incomeSources = data.incomeSources || [];
+
+  const status = data.financialStatus || data.recommendation || {};
+  const statusLabel = status.status === 'green' ? 'Puedes avanzar' : status.status === 'yellow' ? 'Cuidado' : 'No gastar todavia';
+  const nextBill = (data.upcomingBills || []).find((bill) => Number(bill.remaining || 0) > 0) || null;
+  const nextPaycheck = (data.pendingPaychecks || [])[0] || data.nextPaycheck || null;
+  const capitalOne = accountBalance(data.accounts, 'Capital One');
+  const moneyNotToTouch = Number(status.moneyNotToTouch ?? data.totals?.reserved ?? 0);
+  const freeReal = Number(status.freeReal ?? data.totals?.freeReal ?? 0);
+  const steps = (status.steps || data.recommendation?.steps || []).slice(0, 3);
+
+  $('#view').innerHTML = `
+    <section class="today-shell">
+      <article class="today-hero ${levelClass(status.status)}">
+        <div>
+          <span class="today-kicker">Estado de la semana</span>
+          <h3>${escapeHtml(statusLabel)}</h3>
+          <p>${escapeHtml(status.message || data.recommendation?.message || 'Revisa lo importante antes de mover dinero.')}</p>
+        </div>
+        <span class="status-pill ${levelClass(status.status)}">${escapeHtml(status.status || 'red')}</span>
+      </article>
+
+      <section class="money-strip">
+        ${simpleMoneyCard('Capital One', capitalOne, 'Balance para pagos diarios')}
+        ${simpleMoneyCard('No tocar', money(moneyNotToTouch), 'Pagos, gasolina, comida y buffer')}
+        ${simpleMoneyCard('Libre real', money(freeReal), freeReal > 0 ? 'Dinero que puedes considerar' : 'No uses dinero extra ahora', freeReal > 0 ? 'green' : 'red')}
+      </section>
+
+      <section class="today-grid">
+        <article class="panel today-focus">
+          <div class="panel-head">
+            <div>
+              <h3>Proximo paso</h3>
+              <p>${escapeHtml(status.title || 'Primero lo importante')}</p>
+            </div>
+          </div>
+          <strong class="next-action">${escapeHtml(status.nextAction || steps[0] || 'Revisa pagos y cheques pendientes.')}</strong>
+          <div class="mini-checklist">
+            ${steps.map((step) => `<div><i data-lucide="check-circle-2"></i><span>${escapeHtml(step)}</span></div>`).join('') || '<div><i data-lucide="check-circle-2"></i><span>Sin pasos urgentes por ahora.</span></div>'}
+          </div>
+        </article>
+
+        <article class="panel today-focus">
+          <div class="panel-head"><h3>Lo que viene</h3></div>
+          <div class="simple-list">
+            <div>
+              <span>Pago importante</span>
+              <strong>${nextBill ? `${escapeHtml(nextBill.name)} - ${money(nextBill.remaining)}` : 'Sin pago cercano'}</strong>
+              <small>${nextBill ? dateLabel(nextBill.dueDate) : 'Nada urgente registrado'}</small>
+            </div>
+            <div>
+              <span>Cheque por verificar</span>
+              <strong>${nextPaycheck ? money(nextPaycheck.netEstimated || nextPaycheck.netActual || 0) : 'Sin cheque pendiente'}</strong>
+              <small>${nextPaycheck ? dateLabel(nextPaycheck.expectedDate) : 'No hay verificacion pendiente'}</small>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="quick-actions">
+        <button class="quick-button" data-quick="verify-paycheck" type="button"><i data-lucide="badge-dollar-sign"></i><span>Ya recibi un cheque</span></button>
+        <button class="quick-button" data-quick="payment" type="button"><i data-lucide="receipt"></i><span>Ya hice un pago</span></button>
+        <button class="quick-button" data-quick="balance" type="button"><i data-lucide="wallet"></i><span>Actualizar balance</span></button>
+        <button class="quick-button" data-go="whatnow" type="button"><i data-lucide="circle-help"></i><span>Calcular que hago ahora</span></button>
+      </section>
+
+      <section class="quick-secondary">
+        <button class="action-button secondary" data-quick="daughter" type="button"><i data-lucide="hand-coins"></i>Pago a hija</button>
+        <button class="action-button secondary" data-quick="gas" type="button"><i data-lucide="fuel"></i>Gasolina cubierta</button>
+        <button class="action-button secondary" data-quick="reserve-phone" type="button"><i data-lucide="phone"></i>Telefono/internet reservado</button>
+      </section>
+    </section>
+  `;
+
+  bindGoButtons();
+  bindQuickActions();
 }
 
 async function renderDashboard(force = false) {
@@ -340,6 +447,80 @@ async function renderDashboard(force = false) {
   `;
 
   bindGoButtons();
+}
+
+async function renderMoney(force = false) {
+  const data = await getViewData('accounts', force);
+  const accounts = data.accounts || [];
+  state.cache.accounts = accounts;
+  $('#view').innerHTML = `
+    <section class="today-shell">
+      <section class="money-strip">
+        ${accounts.map((account) => simpleMoneyCard(account.name, money(account.currentBalance), account.isProtected ? 'No tocar' : account.purpose || account.type, account.isProtected ? 'green' : 'blue')).join('')}
+      </section>
+      <section class="quick-actions">
+        <button class="quick-button" data-quick="balance" type="button"><i data-lucide="wallet"></i><span>Actualizar Capital One</span></button>
+        <button class="quick-button" data-go="accounts" type="button"><i data-lucide="settings-2"></i><span>Ver cuentas avanzado</span></button>
+      </section>
+    </section>
+  `;
+  bindGoButtons();
+  bindQuickActions();
+}
+
+async function renderMore() {
+  const advanced = state.simpleMode ? [] : [['incomes', 'Ingresos', 'banknote']];
+  const items = MORE_NAV.concat(advanced);
+  $('#view').innerHTML = `
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>Mas opciones</h3>
+          <p>${state.simpleMode ? 'Modo simple activo' : 'Modo avanzado activo'}</p>
+        </div>
+        <button id="modeToggle" class="action-button secondary" type="button">
+          <i data-lucide="${state.simpleMode ? 'sliders-horizontal' : 'sparkles'}"></i>${state.simpleMode ? 'Activar avanzado' : 'Volver a simple'}
+        </button>
+      </div>
+      <div class="more-grid">
+        ${items.map(([id, label, icon]) => `
+          <button class="more-card" data-go="${id}" type="button">
+            <i data-lucide="${icon}"></i>
+            <span>${escapeHtml(label)}</span>
+          </button>
+        `).join('')}
+      </div>
+    </section>
+  `;
+  $('#modeToggle').addEventListener('click', () => {
+    state.simpleMode = !state.simpleMode;
+    localStorage.setItem('mcf_mode', state.simpleMode ? 'simple' : 'advanced');
+    renderView('more', true);
+  });
+  bindGoButtons();
+}
+
+async function renderBackup() {
+  $('#view').innerHTML = `
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>Backup</h3>
+          <p>Exportar o importar datos sin tocar la vista simple.</p>
+        </div>
+      </div>
+      <div class="button-row">
+        <button id="exportBackup" class="action-button primary" type="button"><i data-lucide="download"></i>Exportar JSON</button>
+        <label class="action-button secondary">
+          <i data-lucide="upload"></i>
+          Importar JSON
+          <input id="importBackup" type="file" accept="application/json" hidden>
+        </label>
+      </div>
+    </section>
+  `;
+  $('#exportBackup').addEventListener('click', exportBackup);
+  $('#importBackup').addEventListener('change', importBackup);
 }
 
 async function renderAccounts(force = false) {
@@ -544,6 +725,46 @@ async function renderPaychecks(force = false) {
 }
 
 async function renderBills(force = false) {
+  if (!state.simpleMode) {
+    return renderBillsAdvanced(force);
+  }
+  const data = await getViewData('bills', force);
+  const upcoming = sortByDateAsc(data.upcoming || [], 'dueDate').filter((bill) => Number(bill.remaining || 0) > 0);
+  state.cache.accounts = data.accounts || [];
+  state.cache.bills = data.bills || [];
+  state.cache.upcomingBills = upcoming;
+  $('#view').innerHTML = `
+    <section class="today-shell">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Pagos proximos</h3>
+            <p>Primero los mas cercanos</p>
+          </div>
+          <button class="action-button secondary" data-quick="payment" type="button"><i data-lucide="check-circle"></i>Ya hice un pago</button>
+        </div>
+        <div class="simple-list">
+          ${upcoming.slice(0, 6).map((bill) => `
+            <div>
+              <span>${dateLabel(bill.dueDate)}</span>
+              <strong>${escapeHtml(bill.name)} - ${money(bill.remaining)}</strong>
+              <small>${escapeHtml(bill.status || 'pendiente')}</small>
+            </div>
+          `).join('') || '<div><strong>No hay pagos pendientes cerca.</strong><small>Todo se ve tranquilo por ahora.</small></div>'}
+        </div>
+      </article>
+      <section class="quick-actions">
+        <button class="quick-button" data-quick="daughter" type="button"><i data-lucide="hand-coins"></i><span>Registrar pago a hija</span></button>
+        <button class="quick-button" data-quick="reserve-phone" type="button"><i data-lucide="phone"></i><span>Telefono/internet reservado</span></button>
+        <button class="quick-button" data-go="more" type="button"><i data-lucide="more-horizontal"></i><span>Mas opciones</span></button>
+      </section>
+    </section>
+  `;
+  bindGoButtons();
+  bindQuickActions();
+}
+
+async function renderBillsAdvanced(force = false) {
   const data = await getViewData('bills', force);
   const bills = data.bills || [];
   const upcoming = sortByDateAsc(data.upcoming || [], 'dueDate');
@@ -742,27 +963,24 @@ async function renderCalendar(force = false) {
 }
 
 async function renderWhatNow() {
+  const today = state.cache.today || await getViewData('today');
+  const capitalOneAccount = (today.accounts || []).find((account) => account.name === 'Capital One') || {};
   $('#view').innerHTML = `
     <section class="grid">
       <div class="panel span-5">
         <div class="panel-head"><h3>Calculadora</h3></div>
         <form id="whatNowForm" class="form-grid">
-          <label>Dinero actual<input name="currentMoney" type="number" step="0.01" value="312.57" required></label>
-          <label>Pagos antes del cobro<input name="billsTotal" type="number" step="0.01" value="136.97"></label>
-          <label>Hija pagado<input name="daughterPaid" type="number" step="0.01" value="150"></label>
-          <label>Gasolina<input name="gasAmount" type="number" step="0.01" value="45"></label>
-          <label>Comida<input name="foodAmount" type="number" step="0.01" value="60"></label>
-          <label>Proximo cobro<input name="nextPaycheckDate" type="date" value="2026-07-10"></label>
-          <label><input class="check-toggle" name="gasPending" type="checkbox" checked> Falta gasolina</label>
-          <label><input class="check-toggle" name="amazonComing" type="checkbox" checked> Amazon viene</label>
-          <label><input class="check-toggle" name="paycheckConfirmed" type="checkbox"> Cheque confirmado</label>
+          <label class="wide">Balance actual si cambio<input name="currentMoney" type="number" step="0.01" value="${Number(capitalOneAccount.currentBalance || 0)}"></label>
+          <label><input class="check-toggle" name="paycheckConfirmed" type="checkbox"> Ya recibi cheque</label>
+          <label><input class="check-toggle" name="gasPending" type="checkbox" ${today.context?.gasPending === false ? '' : 'checked'}> Falta gasolina</label>
+          <label class="wide">Pago parcial hecho hoy<input name="daughterPaid" type="number" step="0.01" value="${Number(today.context?.daughter?.paid || 0)}"></label>
           <div class="full button-row">
             <button class="action-button primary" type="submit"><i data-lucide="calculator"></i>Calcular</button>
           </div>
         </form>
       </div>
       <div id="whatNowResult" class="panel span-7">
-        <div class="empty">Calcula para ver los pasos.</div>
+        <div class="empty">Usare tus balances, pagos, cheques y settings actuales.</div>
       </div>
     </section>
   `;
@@ -1149,8 +1367,150 @@ async function importBackup(event) {
     const backup = JSON.parse(text);
     await api('importData', backup);
     toast('Backup importado.');
-    renderView('dashboard', true);
+    renderView('today', true);
   });
+}
+
+function bindQuickActions() {
+  $$('[data-quick]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const action = button.dataset.quick;
+      if (action === 'balance') openBalanceModal();
+      if (action === 'payment') openPaymentModal(false);
+      if (action === 'daughter') openPaymentModal(true);
+      if (action === 'verify-paycheck') openPaycheckModal();
+      if (action === 'gas') markGasCovered();
+      if (action === 'reserve-phone') markPhoneInternetReserved();
+    });
+  });
+}
+
+function openBalanceModal() {
+  const data = state.cache.today || state.cache.dashboard || {};
+  const account = (data.accounts || state.cache.accounts || []).find((item) => item.name === 'Capital One');
+  if (!account) {
+    toast('No encontre Capital One.');
+    return;
+  }
+  openQuickModal('Actualizar Capital One', `
+    <label>Balance nuevo<input name="currentBalance" type="number" step="0.01" value="${Number(account.currentBalance || 0)}" required></label>
+  `, async (values) => {
+    await api('updateAccountBalance', { id: account.id, currentBalance: values.currentBalance });
+    toast('Balance actualizado.');
+    await renderView(state.activeView, true);
+  });
+}
+
+function openPaymentModal(daughterOnly) {
+  const data = state.cache.today || state.cache.dashboard || {};
+  const upcoming = (data.upcomingBills || state.cache.upcomingBills || [])
+    .filter((bill) => Number(bill.remaining || 0) > 0)
+    .filter((bill) => !daughterOnly || /hija/i.test(bill.name) || bill.billId === 'bill_daughter');
+  if (!upcoming.length) {
+    toast(daughterOnly ? 'No encontre pago pendiente de hija.' : 'No hay pagos pendientes cerca.');
+    return;
+  }
+  openQuickModal(daughterOnly ? 'Registrar pago a hija' : 'Registrar pago hecho', `
+    <label>Pago
+      <select name="billKey">
+        ${upcoming.map((bill) => `<option value="${escapeAttr(`${bill.billId}|${bill.dueDate}`)}">${escapeHtml(bill.name)} - ${money(bill.remaining)} - ${dateLabel(bill.dueDate)}</option>`).join('')}
+      </select>
+    </label>
+    <label>Monto pagado<input name="amount" type="number" step="0.01" value="${Number(upcoming[0].remaining || upcoming[0].amount || 0)}" required></label>
+  `, async (values) => {
+    const [billId, dueDate] = String(values.billKey || '').split('|');
+    const bill = upcoming.find((item) => item.billId === billId && item.dueDate === dueDate);
+    const amount = Number(values.amount || 0);
+    if (bill && amount >= Number(bill.remaining || bill.amount || 0)) {
+      await api('markBillPaid', { billId, dueDate, amount });
+    } else {
+      await api('markBillPartial', { billId, dueDate, partialAmount: amount });
+    }
+    toast('Pago registrado.');
+    await renderView(state.activeView, true);
+  });
+}
+
+async function openPaycheckModal() {
+  const data = state.cache.today || await getViewData('today');
+  const pending = data.pendingPaychecks || [];
+  if (!pending.length) {
+    toast('No hay cheques pendientes.');
+    return;
+  }
+  openQuickModal('Verificar cheque', `
+    <label>Cheque
+      <select name="id">
+        ${pending.map((paycheck) => `<option value="${escapeAttr(paycheck.id)}">${dateLabel(paycheck.expectedDate)} - ${money(paycheck.netEstimated)} - ${escapeHtml(incomeName(paycheck.incomeSourceId))}</option>`).join('')}
+      </select>
+    </label>
+    <label>Estado
+      <select name="status">
+        <option value="received">Recibido</option>
+        <option value="not_received">No recibido</option>
+      </select>
+    </label>
+    <label>Monto real<input name="netActual" type="number" step="0.01" value="${Number(pending[0].netEstimated || 0)}"></label>
+  `, async (values) => {
+    if (values.status === 'not_received') {
+      await api('markPaycheckNotReceived', { id: values.id });
+    } else {
+      await api('verifyPaycheck', { id: values.id, netActual: values.netActual });
+    }
+    toast('Cheque actualizado.');
+    await renderView(state.activeView, true);
+  });
+}
+
+async function markGasCovered() {
+  await guarded(async () => {
+    await api('markGasCovered');
+    toast('Gasolina marcada como cubierta.');
+    await renderView('today', true);
+  });
+}
+
+async function markPhoneInternetReserved() {
+  await guarded(async () => {
+    await api('markPhoneInternetReserved');
+    toast('Telefono e internet marcados como reservados.');
+    await renderView('today', true);
+  });
+}
+
+function openQuickModal(title, bodyHtml, onSubmit) {
+  closeQuickModal();
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `
+    <section class="quick-modal" role="dialog" aria-modal="true">
+      <div class="panel-head">
+        <h3>${escapeHtml(title)}</h3>
+        <button class="icon-button modal-close" type="button" title="Cerrar"><i data-lucide="x"></i></button>
+      </div>
+      <form class="stack quick-modal-form">
+        ${bodyHtml}
+        <div class="button-row">
+          <button class="action-button primary" type="submit"><i data-lucide="check"></i>Guardar</button>
+          <button class="action-button secondary modal-close" type="button">Cancelar</button>
+        </div>
+      </form>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  $$('.modal-close', modal).forEach((button) => button.addEventListener('click', closeQuickModal));
+  $('.quick-modal-form', modal).addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await guarded(async () => {
+      await onSubmit(formValues(event.currentTarget));
+      closeQuickModal();
+    });
+  });
+  refreshIcons();
+}
+
+function closeQuickModal() {
+  $$('.modal-backdrop').forEach((modal) => modal.remove());
 }
 
 function fillAccountForm(account) {
@@ -1197,6 +1557,7 @@ async function guarded(fn) {
 
 function viewPayload(view) {
   const base = { view };
+  if (view === 'today') return { view: 'today' };
   if (view === 'accounts') return { ...base, transfersLimit: 20 };
   if (view === 'incomes') return { ...base, paychecksLimit: 40 };
   if (view === 'bills') return { ...base, upcomingDays: 30 };
@@ -1400,6 +1761,16 @@ function metric(label, value, detail, tone = 'info') {
       <strong>${escapeHtml(String(value))}</strong>
       <small>${escapeHtml(detail || '')}</small>
     </div>
+  `;
+}
+
+function simpleMoneyCard(label, value, detail, tone = 'blue') {
+  return `
+    <article class="simple-money ${levelClass(tone)}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+      <small>${escapeHtml(detail || '')}</small>
+    </article>
   `;
 }
 
