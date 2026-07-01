@@ -134,12 +134,16 @@ function navItem(viewId) {
 
 async function validateSavedSession() {
   try {
-    const data = await api('validateSession');
+    showApp();
+    $('#view').innerHTML = '<div class="empty">Cargando Hoy...</div>';
+    const data = await api('bootstrap');
     state.user = data.user;
     state.cache.settings = data.settings || {};
-    showApp();
+    if (data.todayData) {
+      setApiCache('getViewData', viewPayload('today'), data.todayData);
+    }
     toggleForcedPassword(Boolean(state.user.mustChangePassword));
-    await renderView('today', true);
+    await renderView(state.user.mustChangePassword ? 'settings' : 'today', false);
   } catch (error) {
     localStorage.removeItem('mcf_token');
     state.token = '';
@@ -150,28 +154,32 @@ async function validateSavedSession() {
 
 async function handleLogin(event) {
   event.preventDefault();
+  const form = event.currentTarget;
   if (Date.now() < state.loginLockedUntil) {
     toast('Espera un momento antes de intentar otra vez.');
     return;
   }
 
-  const payload = formValues(event.currentTarget);
+  const payload = formValues(form);
   try {
     setBusy(true);
-    setFormDisabled(event.currentTarget, true);
-    const data = await api('login', payload, { skipToken: true });
+    setFormDisabled(form, true);
+    const data = await api('login', { ...payload, includeToday: true }, { skipToken: true });
     state.token = data.token;
     state.user = data.user;
     localStorage.setItem('mcf_token', state.token);
     clearRequestCache();
+    if (data.todayData) {
+      setApiCache('getViewData', viewPayload('today'), data.todayData);
+    }
     showApp();
     toggleForcedPassword(Boolean(state.user.mustChangePassword));
-    await renderView(state.user.mustChangePassword ? 'settings' : 'today', true);
+    await renderView(state.user.mustChangePassword ? 'settings' : 'today', false);
   } catch (error) {
     state.loginLockedUntil = Date.now() + CONFIG.loginCooldownMs;
     toast(error.message);
   } finally {
-    setFormDisabled(event.currentTarget, false);
+    setFormDisabled(form, false);
     setBusy(false);
   }
 }
@@ -194,13 +202,14 @@ async function handleLogout() {
 
 async function handleForcedPassword(event) {
   event.preventDefault();
-  const payload = formValues(event.currentTarget);
+  const form = event.currentTarget;
+  const payload = formValues(form);
   try {
     setBusy(true);
     await api('changePassword', payload);
     state.user.mustChangePassword = false;
     toggleForcedPassword(false);
-    event.currentTarget.reset();
+    form.reset();
     toast('Contrasena actualizada.');
     await renderView('today', true);
   } catch (error) {
@@ -1339,9 +1348,10 @@ async function submitSettings(event) {
 
 async function submitPassword(event) {
   event.preventDefault();
+  const form = event.currentTarget;
   await guarded(async () => {
-    await api('changePassword', formValues(event.currentTarget));
-    event.currentTarget.reset();
+    await api('changePassword', formValues(form));
+    form.reset();
     toast('Contrasena actualizada.');
   });
 }
@@ -1599,6 +1609,10 @@ async function apiCached(action, payload = {}, options = {}) {
   return state.inFlight[key];
 }
 
+function setApiCache(action, payload = {}, data) {
+  state.requestCache[apiCacheKey(action, payload)] = { at: Date.now(), data };
+}
+
 async function api(action, payload = {}, options = {}) {
   const requestId = `mcf_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const request = {
@@ -1716,6 +1730,7 @@ function setBusy(show) {
 }
 
 function setFormDisabled(form, disabled) {
+  if (!form) return;
   $$('button, input, select, textarea', form).forEach((element) => {
     element.disabled = disabled;
   });
