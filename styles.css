@@ -490,6 +490,18 @@ th {
   width: 210px;
 }
 
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.check-row input {
+  width: auto;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
@@ -959,6 +971,36 @@ th {
 
 .simple-money strong {
   font-size: 25px;
+}
+
+.bank-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  padding: 13px;
+  border: 1px solid #fde68a;
+  border-left: 4px solid var(--warning);
+  border-radius: var(--radius);
+  background: #fffbeb;
+}
+
+.bank-note svg {
+  width: 20px;
+  height: 20px;
+  color: var(--warning);
+}
+
+.bank-note strong,
+.bank-note span {
+  display: block;
+}
+
+.bank-note span {
+  margin-top: 3px;
+  color: #66511a;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .today-grid {

@@ -288,6 +288,8 @@ async function renderToday(force = false) {
   const capitalOne = accountBalance(data.accounts, 'Capital One');
   const moneyNotToTouch = Number(status.moneyNotToTouch ?? data.totals?.reserved ?? 0);
   const freeReal = Number(status.freeReal ?? data.totals?.freeReal ?? 0);
+  const pendingBankDeduction = Number(data.totals?.pendingBankDeduction ?? data.context?.pendingBankDeduction ?? 0);
+  const realAvailableBeforeReserves = Number(data.totals?.realAvailableBeforeReserves ?? data.context?.realAvailableBeforeReserves ?? 0);
   const steps = (status.steps || data.recommendation?.steps || []).slice(0, 3);
 
   $('#view').innerHTML = `
@@ -306,6 +308,16 @@ async function renderToday(force = false) {
         ${simpleMoneyCard('No tocar', money(moneyNotToTouch), 'Pagos, gasolina, comida y buffer')}
         ${simpleMoneyCard('Libre real', money(freeReal), freeReal > 0 ? 'Dinero que puedes considerar' : 'No uses dinero extra ahora', freeReal > 0 ? 'green' : 'red')}
       </section>
+
+      ${pendingBankDeduction > 0 ? `
+        <article class="bank-note">
+          <i data-lucide="circle-alert"></i>
+          <div>
+            <strong>Pagado, pendiente del banco</strong>
+            <span>Hay ${money(pendingBankDeduction)} ya pagados que todavia no se han descontado. Trata tu dinero disponible antes de otras reservas como ${money(realAvailableBeforeReserves)}.</span>
+          </div>
+        </article>
+      ` : ''}
 
       <section class="today-grid">
         <article class="panel today-focus">
@@ -738,10 +750,11 @@ async function renderBills(force = false) {
     return renderBillsAdvanced(force);
   }
   const data = await getViewData('bills', force);
-  const upcoming = sortByDateAsc(data.upcoming || [], 'dueDate').filter((bill) => Number(bill.remaining || 0) > 0);
+  const upcomingAll = sortByDateAsc(data.upcoming || [], 'dueDate');
+  const upcoming = upcomingAll.filter((bill) => Number(bill.remaining || 0) > 0 || Number(bill.pendingBankDeduction || 0) > 0);
   state.cache.accounts = data.accounts || [];
   state.cache.bills = data.bills || [];
-  state.cache.upcomingBills = upcoming;
+  state.cache.upcomingBills = upcomingAll;
   $('#view').innerHTML = `
     <section class="today-shell">
       <article class="panel">
@@ -756,8 +769,9 @@ async function renderBills(force = false) {
           ${upcoming.slice(0, 6).map((bill) => `
             <div class="bill-payment-item" data-bill-id="${escapeAttr(bill.billId)}" data-due="${escapeAttr(bill.dueDate)}">
               <span>${dateLabel(bill.dueDate)}</span>
-              <strong>${escapeHtml(bill.name)} - ${money(bill.remaining)}</strong>
-              <small>${escapeHtml(bill.status || 'pendiente')}</small>
+              <strong>${escapeHtml(bill.name)}</strong>
+              <small>Total ${money(bill.amount)} · Pagado ${money(bill.amountPaid || 0)} · Falta ${money(bill.remaining || 0)}</small>
+              <small>${escapeHtml(paymentStatusLabel(bill))}${Number(bill.pendingBankDeduction || 0) > 0 ? ` · pendiente del banco ${money(bill.pendingBankDeduction)}` : ''}</small>
             </div>
           `).join('') || '<div><strong>No hay pagos pendientes cerca.</strong><small>Todo se ve tranquilo por ahora.</small></div>'}
         </div>
@@ -811,13 +825,18 @@ async function renderBillsAdvanced(force = false) {
               <div class="item-row">
                 <div>
                   <strong>${escapeHtml(bill.name)}</strong>
-                  <div class="muted">${dateLabel(bill.dueDate)} - falta ${money(bill.remaining)}</div>
+                  <div class="muted">${dateLabel(bill.dueDate)} - total ${money(bill.amount)} - pagado ${money(bill.amountPaid || 0)} - falta ${money(bill.remaining)}</div>
+                  ${Number(bill.pendingBankDeduction || 0) > 0 ? `<div class="muted">Pagado, pero faltan ${money(bill.pendingBankDeduction)} por descontarse del banco.</div>` : ''}
                 </div>
-                ${badge(bill.remaining <= 0 ? 'green' : levelClass(bill.priority), bill.status)}
+                ${badge(bill.remaining <= 0 ? 'green' : levelClass(bill.priority), paymentStatusLabel(bill))}
               </div>
               <form class="inline-form bill-pay-form" data-id="${escapeHtml(bill.billId)}" data-due="${escapeHtml(bill.dueDate)}" data-amount="${Number(bill.remaining || bill.amount)}">
                 <input name="amount" type="number" step="0.01" value="${Number(bill.remaining || bill.amount)}">
-                <button class="action-button primary" data-kind="paid" type="submit"><i data-lucide="check-circle"></i>Pagado</button>
+                <select name="bankState">
+                  <option value="deducted">Ya salio del banco</option>
+                  <option value="pending">Pagado pero no descontado</option>
+                </select>
+                <button class="action-button primary" data-kind="paid" type="submit"><i data-lucide="check-circle"></i>Pagado completo</button>
                 <button class="action-button secondary partial-pay" type="button"><i data-lucide="split"></i>Parcial</button>
               </form>
             </article>
@@ -1234,15 +1253,21 @@ async function submitBill(event) {
 async function submitBillPaid(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  const values = formValues(form);
   const payment = {
     billId: form.dataset.id,
     dueDate: form.dataset.due,
-    amount: Number(formValues(form).amount || form.dataset.amount || 0),
-    full: true
+    amount: Number(values.amount || form.dataset.amount || 0),
+    full: true,
+    pendingBankDeduction: values.bankState === 'pending'
   };
   await guarded(async () => {
     setFormDisabled(form, true);
-    await api('markBillPaid', payment);
+    await api('markBillPaid', {
+      ...payment,
+      alreadyDeductedFromBank: values.bankState !== 'pending',
+      pendingBankDeduction: values.bankState === 'pending'
+    });
     confirmPaymentSaved(payment);
   });
   setFormDisabled(form, false);
@@ -1255,14 +1280,17 @@ async function submitBillPartial(event) {
     billId: form.dataset.id,
     dueDate: form.dataset.due,
     amount: Number(values.amount || 0),
-    full: false
+    full: false,
+    pendingBankDeduction: values.bankState === 'pending'
   };
   await guarded(async () => {
     setFormDisabled(form, true);
     await api('markBillPartial', {
       billId: payment.billId,
       dueDate: payment.dueDate,
-      partialAmount: payment.amount
+      partialAmount: payment.amount,
+      alreadyDeductedFromBank: values.bankState !== 'pending',
+      pendingBankDeduction: values.bankState === 'pending'
     });
     confirmPaymentSaved(payment);
   });
@@ -1417,8 +1445,13 @@ function openBalanceModal() {
   }
   openQuickModal('Actualizar Capital One', `
     <label>Balance nuevo<input name="currentBalance" type="number" step="0.01" value="${Number(account.currentBalance || 0)}" required></label>
+    <label class="check-row"><input name="clearPendingBankDeductions" type="checkbox"> Los pagos pendientes ya salieron del banco</label>
   `, async (values) => {
-    await api('updateAccountBalance', { id: account.id, currentBalance: values.currentBalance });
+    await api('updateAccountBalance', {
+      id: account.id,
+      currentBalance: values.currentBalance,
+      clearPendingBankDeductions: Boolean(values.clearPendingBankDeductions)
+    });
     toast('Balance actualizado.');
     await renderView(state.activeView, true);
   });
@@ -1426,7 +1459,7 @@ function openBalanceModal() {
 
 function openPaymentModal(daughterOnly) {
   const data = state.cache.today || state.cache.dashboard || {};
-  const upcoming = (data.upcomingBills || state.cache.upcomingBills || [])
+  const upcoming = (state.cache.upcomingBills || data.upcomingBills || [])
     .filter((bill) => Number(bill.remaining || 0) > 0)
     .filter((bill) => !daughterOnly || /hija/i.test(bill.name) || bill.billId === 'bill_daughter');
   if (!upcoming.length) {
@@ -1440,6 +1473,19 @@ function openPaymentModal(daughterOnly) {
       </select>
     </label>
     <label>Monto pagado<input name="amount" type="number" step="0.01" value="${Number(upcoming[0].remaining || upcoming[0].amount || 0)}" required></label>
+    <label>Cuenta
+      <select name="account">
+        ${options(data.accounts || state.cache.accounts || [], 'id', 'name')}
+      </select>
+    </label>
+    <label>Fecha de pago<input name="paymentDate" type="date" value="${todayIso()}"></label>
+    <label>Banco
+      <select name="bankState">
+        <option value="deducted">Ya salio del banco</option>
+        <option value="pending">Pagado pero no descontado</option>
+      </select>
+    </label>
+    <label>Nota<input name="notes" placeholder="Opcional"></label>
   `, async (values) => {
     const [billId, dueDate] = String(values.billKey || '').split('|');
     const bill = upcoming.find((item) => item.billId === billId && item.dueDate === dueDate);
@@ -1448,12 +1494,23 @@ function openPaymentModal(daughterOnly) {
       billId,
       dueDate,
       amount,
-      full: Boolean(bill && amount >= Number(bill.remaining || bill.amount || 0))
+      full: Boolean(bill && amount >= Number(bill.remaining || bill.amount || 0)),
+      pendingBankDeduction: values.bankState === 'pending'
+    };
+    const common = {
+      billId,
+      dueDate,
+      amount,
+      account: values.account,
+      paymentDate: values.paymentDate,
+      alreadyDeductedFromBank: values.bankState !== 'pending',
+      pendingBankDeduction: values.bankState === 'pending',
+      notes: values.notes
     };
     if (bill && amount >= Number(bill.remaining || bill.amount || 0)) {
-      await api('markBillPaid', { billId, dueDate, amount });
+      await api('markBillPaid', common);
     } else {
-      await api('markBillPartial', { billId, dueDate, partialAmount: amount });
+      await api('markBillPartial', { ...common, partialAmount: amount });
     }
     confirmPaymentSaved(payment);
   });
@@ -1514,7 +1571,7 @@ function confirmPaymentSaved(payment) {
   markBillPaymentItem(payment, name);
   confirmActionDone(
     payment.full ? 'Pago registrado' : 'Pago parcial registrado',
-    `${name} quedo guardado por ${money(payment.amount)}. ${payment.full ? 'Ya no queda como pendiente.' : 'Se desconto el monto pagado.'}`
+    `${name} quedo guardado por ${money(payment.amount)}. ${payment.pendingBankDeduction ? 'Todavia no lo uses: falta que salga del banco.' : (payment.full ? 'Ya no queda como pendiente.' : 'Se desconto el monto pagado.')}`
   );
   refreshViewsQuietly('today', 'bills');
 }
@@ -2151,10 +2208,24 @@ function todayInput() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function todayIso() {
+  return todayInput();
+}
+
+function paymentStatusLabel(bill) {
+  const status = String(bill?.status || '').toLowerCase();
+  if (status === 'pending_bank_deduction') return 'Pagado, falta descontar';
+  if (status === 'paid') return 'Pagado';
+  if (status === 'partial') return 'Parcial';
+  if (status === 'overdue') return 'Vencido';
+  if (status === 'not_due_yet') return 'Pronto';
+  return 'Pendiente';
+}
+
 function levelClass(value) {
   const text = String(value || '').toLowerCase();
   if (['critical', 'red', 'critica'].includes(text)) return 'red';
-  if (['important', 'warning', 'yellow', 'amarillo'].includes(text)) return 'yellow';
+  if (['important', 'warning', 'yellow', 'amarillo', 'partial', 'pending_bank_deduction'].includes(text)) return 'yellow';
   if (['success', 'green', 'paid'].includes(text)) return 'green';
   return 'blue';
 }
