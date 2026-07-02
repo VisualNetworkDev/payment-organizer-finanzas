@@ -717,12 +717,12 @@ async function renderPaychecks(force = false) {
       <div class="panel-head">
         <div>
           <h3>Verificacion semanal de cheques</h3>
-          <p>${pending.length} pendientes</p>
+          <p id="paycheckPendingCount">${pending.length} pendientes</p>
         </div>
       </div>
-      <div class="list">
+      <div id="paychecksList" class="list">
         ${pending.map((paycheck) => `
-          <article class="item-card alert ${levelClass(paycheck.alertLevel)}">
+          <article class="item-card alert ${levelClass(paycheck.alertLevel)} paycheck-item" data-paycheck-id="${escapeAttr(paycheck.id)}">
             <div class="item-row">
               <div>
                 <strong>${dateLabel(paycheck.expectedDate)}</strong>
@@ -751,7 +751,7 @@ async function renderBills(force = false) {
   }
   const data = await getViewData('bills', force);
   const upcomingAll = sortByDateAsc(data.upcoming || [], 'dueDate');
-  const upcoming = upcomingAll.filter((bill) => Number(bill.remaining || 0) > 0 || Number(bill.pendingBankDeduction || 0) > 0);
+  const upcoming = upcomingAll.filter((bill) => Number(bill.remaining || 0) > 0);
   state.cache.accounts = data.accounts || [];
   state.cache.bills = data.bills || [];
   state.cache.upcomingBills = upcomingAll;
@@ -943,6 +943,7 @@ async function renderShifts(force = false) {
       <div class="panel span-5">
         <div class="panel-head"><h3>Turno trabajado</h3></div>
         <form id="shiftForm" class="form-grid">
+          <input type="hidden" name="id">
           <label class="wide">Fuente<select name="incomeSourceId">${options(sources, 'id', 'name', amazon.id)}</select></label>
           <label>Fecha<input name="date" type="date" value="${todayInput()}" required></label>
           <label>Inicio<input name="startTime" type="time" value="13:00"></label>
@@ -955,22 +956,31 @@ async function renderShifts(force = false) {
           <label class="full">Notas<textarea name="notes"></textarea></label>
           <div class="full button-row">
             <button class="action-button primary" type="submit"><i data-lucide="save"></i>Guardar turno</button>
+            <button id="resetShiftForm" class="action-button secondary" type="button"><i data-lucide="rotate-ccw"></i>Nuevo</button>
           </div>
         </form>
       </div>
       <div class="panel span-7">
         <div class="panel-head"><h3>Historial de turnos</h3></div>
-        ${table(['Fecha', 'Horas', 'Rate', 'Neto estimado', 'Cheque'], shifts.map((shift) => [
+        ${table(['Fecha', 'Horario', 'Horas', 'Rate', 'Neto estimado', 'Cheque', 'Accion'], shifts.map((shift) => [
           dateLabel(shift.date),
+          `${escapeHtml(shift.startTime || '-')} - ${escapeHtml(shift.endTime || '-')}`,
           Number(shift.hours || 0).toFixed(2),
           money(shift.rate),
           money(shift.estimatedNet),
-          shift.linkedPaycheckId ? 'Creado' : '-'
+          shift.linkedPaycheckId ? 'Creado' : '-',
+          `<div class="button-row compact">
+            <button class="action-button secondary edit-shift" data-id="${escapeAttr(shift.id)}" type="button"><i data-lucide="pencil"></i>Editar</button>
+            <button class="action-button danger delete-shift" data-id="${escapeAttr(shift.id)}" type="button"><i data-lucide="trash-2"></i>Borrar</button>
+          </div>`
         ]))}
       </div>
     </section>
   `;
   $('#shiftForm').addEventListener('submit', submitShift);
+  $('#resetShiftForm').addEventListener('click', resetShiftForm);
+  $$('.edit-shift').forEach((button) => button.addEventListener('click', () => fillShiftForm(shifts.find((shift) => shift.id === button.dataset.id))));
+  $$('.delete-shift').forEach((button) => button.addEventListener('click', () => deleteShift(button.dataset.id)));
 }
 
 async function renderCalendar(force = false) {
@@ -1226,18 +1236,24 @@ async function submitPaycheck(event) {
 
 async function submitVerifyPaycheck(event) {
   event.preventDefault();
+  const form = event.currentTarget;
+  const id = form.dataset.id;
   await guarded(async () => {
-    await api('verifyPaycheck', { id: event.currentTarget.dataset.id, ...formValues(event.currentTarget) });
-    toast('Cheque verificado.');
-    renderView('paychecks', true);
+    await api('verifyPaycheck', { id, ...formValues(form) });
+    confirmActionDone('Cheque recibido', 'Lo quite de pendientes y estoy buscando la siguiente fecha.');
+    removePaycheckItem(id);
+    refreshViewsQuietly('today');
+    refreshAndRenderQuietly('paychecks');
   });
 }
 
 async function markNotReceived(id) {
   await guarded(async () => {
     await api('markPaycheckNotReceived', { id });
-    toast('Cheque marcado como no recibido.');
-    renderView('paychecks', true);
+    confirmActionDone('Cheque marcado como no recibido', 'Lo quite de pendientes y estoy actualizando las siguientes fechas.');
+    removePaycheckItem(id);
+    refreshViewsQuietly('today');
+    refreshAndRenderQuietly('paychecks');
   });
 }
 
@@ -1319,8 +1335,18 @@ async function submitShift(event) {
   event.preventDefault();
   await guarded(async () => {
     await api('saveWorkShift', formValues(event.currentTarget));
-    toast('Turno guardado.');
-    renderView('shifts', true);
+    confirmActionDone('Turno guardado', 'El historial se actualiza con los cambios.');
+    refreshAndRenderQuietly('shifts');
+  });
+}
+
+async function deleteShift(id) {
+  if (!id || !window.confirm('Borrar este turno del historial?')) return;
+  await guarded(async () => {
+    await api('deleteWorkShift', { id });
+    confirmActionDone('Turno borrado', 'Se quito del historial.');
+    removeShiftRow(id);
+    refreshAndRenderQuietly('shifts');
   });
 }
 
@@ -1544,7 +1570,11 @@ async function openPaycheckModal() {
     }
     confirmActionDone('Cheque actualizado', 'Quedo marcado. La informacion se sincroniza sola.');
     removePendingPaycheckLocally(values.id);
-    refreshViewsQuietly('today', state.activeView);
+    removePaycheckItem(values.id);
+    refreshViewsQuietly('today');
+    if (state.activeView === 'paychecks') {
+      refreshAndRenderQuietly('paychecks');
+    }
   });
 }
 
@@ -1568,12 +1598,21 @@ function confirmPaymentSaved(payment) {
   const bill = findCachedBill(payment.billId, payment.dueDate);
   const name = bill?.name || 'Pago';
   applyLocalBillPayment(payment);
-  markBillPaymentItem(payment, name);
+  if (payment.full) {
+    removeBillPaymentItem(payment);
+  } else {
+    markBillPaymentItem(payment, name);
+  }
   confirmActionDone(
     payment.full ? 'Pago registrado' : 'Pago parcial registrado',
     `${name} quedo guardado por ${money(payment.amount)}. ${payment.pendingBankDeduction ? 'Todavia no lo uses: falta que salga del banco.' : (payment.full ? 'Ya no queda como pendiente.' : 'Se desconto el monto pagado.')}`
   );
-  refreshViewsQuietly('today', 'bills');
+  if (state.activeView === 'today') {
+    refreshAndRenderQuietly('today');
+  } else {
+    refreshViewsQuietly('today');
+  }
+  refreshAndRenderQuietly('bills');
 }
 
 function confirmActionDone(title, detail) {
@@ -1643,6 +1682,15 @@ function markBillPaymentItem(payment, name) {
   refreshIcons();
 }
 
+function removeBillPaymentItem(payment) {
+  $$('.bill-payment-item').forEach((item) => {
+    if (String(item.dataset.billId || '') === String(payment.billId || '') && String(item.dataset.due || '') === String(payment.dueDate || '')) {
+      item.remove();
+    }
+  });
+  ensureListFallback('.simple-list', 'No hay pagos pendientes cerca.', 'Todo se ve tranquilo por ahora.');
+}
+
 function removePendingPaycheckLocally(id) {
   const remove = (list) => (list || []).filter((paycheck) => String(paycheck.id || '') !== String(id || ''));
   if (state.cache.today?.pendingPaychecks) {
@@ -1651,6 +1699,33 @@ function removePendingPaycheckLocally(id) {
   if (state.cache.dashboard?.pendingPaychecks) {
     state.cache.dashboard.pendingPaychecks = remove(state.cache.dashboard.pendingPaychecks);
   }
+}
+
+function removePaycheckItem(id) {
+  $$('.paycheck-item').forEach((item) => {
+    if (String(item.dataset.paycheckId || '') === String(id || '')) {
+      item.remove();
+    }
+  });
+  const count = $$('.paycheck-item').length;
+  const counter = $('#paycheckPendingCount');
+  if (counter) counter.textContent = `${count} pendientes`;
+  ensureListFallback('#paychecksList', 'No hay cheques pendientes.', '');
+  removePendingPaycheckLocally(id);
+}
+
+function removeShiftRow(id) {
+  $$('.delete-shift').forEach((button) => {
+    if (String(button.dataset.id || '') === String(id || '')) {
+      button.closest('tr')?.remove();
+    }
+  });
+}
+
+function ensureListFallback(selector, title, subtitle) {
+  const list = $(selector);
+  if (!list || list.children.length) return;
+  list.innerHTML = `<div class="empty"><strong>${escapeHtml(title)}</strong>${subtitle ? `<small>${escapeHtml(subtitle)}</small>` : ''}</div>`;
 }
 
 function refreshViewsQuietly(...views) {
@@ -1664,6 +1739,17 @@ function refreshViewsQuietly(...views) {
     });
 }
 
+function refreshAndRenderQuietly(view) {
+  apiCached('getViewData', viewPayload(view), { force: true, ttlMs: CONFIG.cacheTtlMs })
+    .then((data) => {
+      rememberViewData(view, data);
+      if (state.activeView === view) {
+        renderView(view, false);
+      }
+    })
+    .catch((error) => console.warn('Background refresh failed:', error));
+}
+
 function rememberViewData(view, data) {
   if (view === 'today') {
     state.cache.today = data;
@@ -1674,8 +1760,16 @@ function rememberViewData(view, data) {
   }
   if (view === 'bills') {
     state.cache.bills = data.bills || state.cache.bills || [];
-    state.cache.upcomingBills = sortByDateAsc(data.upcoming || [], 'dueDate').filter((bill) => Number(bill.remaining || 0) > 0);
+    state.cache.upcomingBills = sortByDateAsc(data.upcoming || [], 'dueDate');
     state.cache.accounts = data.accounts || state.cache.accounts || [];
+  }
+  if (view === 'paychecks') {
+    state.cache.pendingPaychecks = data.pending || [];
+    state.cache.incomeSources = data.sources || state.cache.incomeSources || [];
+  }
+  if (view === 'shifts') {
+    state.cache.shifts = data.shifts || [];
+    state.cache.incomeSources = data.sources || state.cache.incomeSources || [];
   }
 }
 
@@ -1728,6 +1822,18 @@ function fillBillForm(bill) {
 
 function fillDebtForm(debt) {
   fillForm($('#debtForm'), debt);
+}
+
+function fillShiftForm(shift) {
+  fillForm($('#shiftForm'), shift);
+}
+
+function resetShiftForm() {
+  const form = $('#shiftForm');
+  if (!form) return;
+  form.reset();
+  form.elements.id.value = '';
+  if (form.elements.date) form.elements.date.value = todayInput();
 }
 
 function fillForm(form, values) {
