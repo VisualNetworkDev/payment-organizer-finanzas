@@ -1,32 +1,29 @@
-# Payment Organizer public website
+# Payment Organizer
 
-Public GitHub Pages site for Payment Organizer. It contains the landing page, passwordless account entry, authenticated user portal, configurable downloads/developer content, contact form, privacy policy, and terms.
+Repositorio web consolidado de Payment Organizer. GitHub Pages publica tres entradas que comparten una sola configuración de API:
 
-The site does not store or receive personal payments, income, expenses, debts, balances, financial notes, or financial reminders. Those records remain local in the Flutter application.
+- `/finanzas/`: sitio público, registro, inicio de sesión, descargas y documentos legales.
+- `/finanzas/portal/`: portal autenticado de usuarios.
+- `/finanzas/admin/`: panel administrativo autenticado, sin enlaces desde la página pública y con `noindex,nofollow`.
 
-## Published files
+El backend de Google Apps Script y la aplicación Flutter se conservan localmente bajo `_private/`, que está excluido de Git. La web nunca recibe pagos, balances, deudas, notas ni recordatorios financieros personales; esos datos permanecen en el dispositivo.
 
-- `index.html`: landing page, registration/login dialogs, FAQ, and contact.
-- `portal.html`: private user portal guarded by a server-validated bearer session.
-- `privacy.html` and `terms.html`: owner-review legal drafts.
-- `styles.css`: shared responsive and accessible design system.
-- `api.js`: versioned Apps Script client and session-scoped token storage.
-- `app.js` and `portal.js`: page behavior.
-- `public-config.js`: deployment-safe public fields; no secrets.
-- `assets/brand/`: original Payment Organizer brand asset.
+## Desarrollo y comprobación
 
-## Configure without secrets
+```powershell
+node --test tests\*.test.cjs
+```
 
-Set the new platform Apps Script `/exec` URL in `public-config.js` only after the dedicated backend has been installed and verified. The URL is public by nature. Never place Script Properties, `.clasp.json`, administrator emails, spreadsheet IDs, tokens, codes, internal notes, exports, or financial records in this repository.
+La URL pública de Apps Script se define una sola vez en `shared/config.js`. No deben publicarse propiedades de Apps Script, contraseñas, hashes administrativos, identificadores de hojas, tokens, códigos ni notas internas.
 
-Developer biography/photo/links and screenshots remain hidden when their configuration values are empty. Download buttons appear only when the backend enables a platform and returns a real HTTPS URL.
+## Documentación
 
-## Deployment
+- [Arquitectura](docs/ARCHITECTURE.md)
+- [Despliegue](docs/DEPLOYMENT.md)
+- [Backend](docs/BACKEND.md)
+- [Flujo Premium](docs/PREMIUM_FLOW.md)
+- [Catálogo Premium](docs/PREMIUM_FEATURES.md)
+- [Guía administrativa](docs/ADMIN_GUIDE.md)
+- [Pruebas](docs/TESTING.md)
 
-1. Verify the dedicated Apps Script backend and new Google Sheets schema.
-2. Configure the approved API URL and owner-provided public profile/legal values.
-3. Run the static, accessibility, responsive, auth, portal, and contact tests.
-4. Review the complete Git diff for secrets and personal data.
-5. Commit and push `main`, then publish it with GitHub Pages.
-
-The independent administrator frontend and all private platform projects live outside this public repository under the ignored `_private/` workspace.
+Los textos de privacidad y términos son borradores técnicos y requieren revisión final del propietario y asesoría legal antes de un lanzamiento comercial.
