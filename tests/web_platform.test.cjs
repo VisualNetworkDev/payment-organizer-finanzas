@@ -67,6 +67,18 @@ test('portal applies strict activation eligibility and exposes feature access', 
   assert.match(read('portal/index.html'), /data-copy-code/);
 });
 
+test('public plan comparison names only implemented Premium features', () => {
+  const page = read('index.html');
+  for (const label of [
+    'Recordatorios avanzados',
+    'Reportes por categoría',
+    'Planificador de pagos',
+    'Frecuencias de pago personalizadas',
+  ]) {
+    assert.match(page, new RegExp(label, 'u'));
+  }
+});
+
 test('all buttons declare their behavior', () => {
   for (const file of ['index.html', 'portal/index.html', 'admin/index.html']) {
     for (const match of read(file).matchAll(/<button\b([^>]*)>/gi)) {
