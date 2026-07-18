@@ -1,50 +1,32 @@
-# Mi Control Financiero
+# Payment Organizer public website
 
-Frontend web personal para administrar balances manuales, pagos, deudas, ingresos, cheques, turnos, alertas, calendario y checklist semanal.
+Public GitHub Pages site for Payment Organizer. It contains the landing page, passwordless account entry, authenticated user portal, configurable downloads/developer content, contact form, privacy policy, and terms.
 
-## Stack
+The site does not store or receive personal payments, income, expenses, debts, balances, financial notes, or financial reminders. Those records remain local in the Flutter application.
 
-- Frontend: GitHub Pages.
-- Backend: Google Apps Script.
-- Base de datos: Google Sheets.
+## Published files
 
-El backend de Apps Script no se publica en este repositorio. Este repo contiene solo los archivos necesarios para la pagina web.
+- `index.html`: landing page, registration/login dialogs, FAQ, and contact.
+- `portal.html`: private user portal guarded by a server-validated bearer session.
+- `privacy.html` and `terms.html`: owner-review legal drafts.
+- `styles.css`: shared responsive and accessible design system.
+- `api.js`: versioned Apps Script client and session-scoped token storage.
+- `app.js` and `portal.js`: page behavior.
+- `public-config.js`: deployment-safe public fields; no secrets.
+- `assets/brand/`: original Payment Organizer brand asset.
 
-## Archivos publicados
+## Configure without secrets
 
-- `index.html`: pagina principal.
-- `styles.css`: diseno responsive.
-- `app.js`: logica del frontend y conexion con el web app de Apps Script.
+Set the new platform Apps Script `/exec` URL in `public-config.js` only after the dedicated backend has been installed and verified. The URL is public by nature. Never place Script Properties, `.clasp.json`, administrator emails, spreadsheet IDs, tokens, codes, internal notes, exports, or financial records in this repository.
 
-## Uso
+Developer biography/photo/links and screenshots remain hidden when their configuration values are empty. Download buttons appear only when the backend enables a platform and returns a real HTTPS URL.
 
-1. Publicar este repositorio en GitHub Pages desde la rama `main`.
-2. Abrir la URL de GitHub Pages.
-3. Iniciar sesion.
-4. Cambiar la contrasena temporal en el primer login.
-5. Registrar balances reales manualmente.
+## Deployment
 
-## Seguridad
+1. Verify the dedicated Apps Script backend and new Google Sheets schema.
+2. Configure the approved API URL and owner-provided public profile/legal values.
+3. Run the static, accessibility, responsive, auth, portal, and contact tests.
+4. Review the complete Git diff for secrets and personal data.
+5. Commit and push `main`, then publish it with GitHub Pages.
 
-- No hay contrasenas guardadas en el frontend.
-- El frontend solo guarda el token de sesion local.
-- El backend valida sesion antes de leer o modificar datos.
-- Los datos financieros viven en Google Sheets, no en GitHub.
-
-## Carga inicial real
-
-El backend local de Apps Script incluye `seedUserFinancialData()`.
-
-Para cargar o actualizar los datos iniciales:
-
-1. Abre el proyecto de Apps Script.
-2. Ejecuta `setupSpreadsheet()`.
-3. Ejecuta `seedUserFinancialData()`.
-4. Ejecuta `runFinancialDataTests()` para revisar totales y calculos.
-5. Haz redeploy del web app si hiciste cambios de codigo.
-
-La carga inicial crea o actualiza cuentas, balances, ingresos, pagos, deudas, turnos recientes, alertas, checklist y configuracion. Si se corre dos veces, no duplica registros.
-
-El cambio de aceite queda marcado como ya pagado antes; el proximo pago se calcula para dentro de 6 meses y la reserva semanal sugerida es de aproximadamente 3 dolares.
-
-Los balances quedan editables manualmente desde la app.
+The independent administrator frontend and all private platform projects live outside this public repository under the ignored `_private/` workspace.
