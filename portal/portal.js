@@ -331,7 +331,7 @@
   }
 
   function translateStatus(status) {
-    return { ACTIVE: "Activa", SUSPENDED: "Suspendida", REVOKED: "Revocada", DELETED: "Eliminada" }[status] || "No disponible";
+    return { ACTIVE: "Activa", SUSPENDED: "Suspendida", DISABLED: "Desactivada", REVOKED: "Revocada", DELETED: "Eliminada" }[status] || "No disponible";
   }
 
   function translatePlatform(platform) {

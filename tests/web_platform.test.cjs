@@ -54,6 +54,9 @@ test('admin remains private-by-auth design and contains no embedded identity or 
   assert.match(files, /adminPasswordLogin/);
   assert.doesNotMatch(files, /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
   assert.doesNotMatch(read('admin/index.html'), /type="password"[^>]*\bvalue=/i);
+  for (const action of ['adminUpdatePremiumAccess', 'adminSetFeatureEntitlement', 'adminRemoveFeatureEntitlement']) {
+    assert.match(files, new RegExp(action), `${action} is not connected`);
+  }
 });
 
 test('portal applies strict activation eligibility and exposes feature access', () => {

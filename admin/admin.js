@@ -172,7 +172,7 @@
     toolbar.append(
       labeledInput("Buscar", "query", "search", state.userFilters.query || "", "Nombre o correo"),
       labeledSelect("Plan", "plan", [["", "Todos"], ["FREE", "Free"], ["PREMIUM", "Premium"]], state.userFilters.plan || ""),
-      labeledSelect("Estado", "status", [["", "Todos"], ["ACTIVE", "Activo"], ["SUSPENDED", "Suspendido"], ["REVOKED", "Revocado"], ["DELETED", "Eliminado"]], state.userFilters.status || ""),
+      labeledSelect("Estado", "status", [["", "Todos"], ["ACTIVE", "Activo"], ["SUSPENDED", "Suspendido"], ["DISABLED", "Desactivado"], ["REVOKED", "Revocado"], ["DELETED", "Eliminado"]], state.userFilters.status || ""),
       labeledSelect("Rol", "role", [["", "Todos"], ["USER", "Usuario"], ["ADMIN", "Administrador"]], state.userFilters.role || "")
     );
     const filterButton = actionButton("Aplicar filtros", "button button-primary", "submit");
@@ -467,7 +467,7 @@
     summary.append(copy, badge(user.status, user.status.toLowerCase()));
     root.append(summary);
     const meta = el("div", "user-meta");
-    [["Rol", user.role], ["Plan", user.plan], ["Registro", formatDate(user.createdAt)], ["Último acceso", formatDate(user.lastPortalLoginAt)]].forEach(([label, value]) => {
+    [["Rol", user.role], ["Plan", user.plan], ["Premium activo", user.premiumActive ? "Sí" : "No"], ["Límite de dispositivos", user.deviceLimit], ["Registro", formatDate(user.createdAt)], ["Último acceso", formatDate(user.lastPortalLoginAt)]].forEach(([label, value]) => {
       const item = el("div"); item.append(el("small", "", label), el("strong", "", value || "No disponible")); meta.append(item);
     });
     root.append(meta, el("h3", "", "Acciones"));
@@ -476,7 +476,14 @@
       ["Editar nombre", "name"], ["Cambiar plan", "plan"], ["Cambiar estado", "status"], ["Cambiar rol", "role"],
       ["Revocar sesiones", "sessions"], ["Revocar dispositivos", "devices"], ["Añadir nota", "note"]
     ].forEach(([label, action]) => { const button = actionButton(label, action === "status" ? "button button-danger" : "button button-secondary"); button.addEventListener("click", () => openAction(action, user)); actions.append(button); });
-    root.append(actions, el("h3", "", `Dispositivos (${(data.devices || []).length})`));
+    root.append(actions);
+    renderPremiumAccess(root, data);
+    renderFeatureAccess(root, data);
+    root.append(el("h3", "", `Códigos de activación (${(data.activationCodes || []).length})`));
+    const codes = el("div", "item-list");
+    if (!(data.activationCodes || []).length) codes.append(empty("Sin códigos de activación."));
+    (data.activationCodes || []).forEach((code) => codes.append(simpleListItem(code.status, `Creado ${formatDateTime(code.createdAt)} · Vence ${formatDateTime(code.expiresAt)}`)));
+    root.append(codes, el("h3", "", `Dispositivos (${(data.devices || []).length})`));
     const devices = el("div", "item-list");
     if (!(data.devices || []).length) devices.append(empty("Sin dispositivos."));
     (data.devices || []).forEach((device) => devices.append(simpleListItem(device.displayLabel || platformName(device.platform), `${device.status} · ${device.appVersion || "Sin versión"}`)));
@@ -485,6 +492,114 @@
     if (!(data.notes || []).length) notes.append(empty("Sin notas privadas."));
     (data.notes || []).forEach((note) => notes.append(simpleListItem(note.note, formatDateTime(note.createdAt))));
     root.append(notes);
+  }
+
+  function renderPremiumAccess(root, data) {
+    const user = data.user;
+    root.append(el("h3", "", "Configuración Premium"));
+    const form = el("form", "form-grid premium-access-form");
+    const plan = labeledSelect("Plan", "plan", [["FREE", "Free"], ["PREMIUM", "Premium"]], user.plan);
+    const deviceLimit = labeledInput("Límite de dispositivos", "deviceLimit", "number", String(user.deviceLimit ?? 0), "0", true);
+    deviceLimit.querySelector("input").min = "0";
+    deviceLimit.querySelector("input").max = "100";
+    const startsAt = labeledInput("Inicio Premium", "premiumActivatedAt", "datetime-local", localDateTimeValue(user.premiumActivatedAt));
+    const expiresAt = labeledInput("Fin Premium opcional", "premiumExpiresAt", "datetime-local", localDateTimeValue(user.premiumExpiresAt));
+    const reason = labeledTextarea("Motivo del cambio", "reason", "", true, "span-2");
+    const submit = actionButton("Guardar acceso Premium", "button button-primary", "submit");
+    const actions = el("div", "inline-form-actions span-2");
+    actions.append(submit);
+    form.append(plan, deviceLimit, startsAt, expiresAt, reason, actions);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!validateForm(form) || state.busy) return;
+      if (!window.confirm("¿Confirmas el cambio de acceso Premium para este usuario?")) return;
+      const values = Object.fromEntries(new FormData(form).entries());
+      values.userId = user.userId;
+      values.deviceLimit = Number(values.deviceLimit);
+      values.premiumActivatedAt = values.premiumActivatedAt ? new Date(values.premiumActivatedAt).toISOString() : "";
+      values.premiumExpiresAt = values.premiumExpiresAt ? new Date(values.premiumExpiresAt).toISOString() : "";
+      setFormBusy(form, true);
+      try {
+        await adminRequest("adminUpdatePremiumAccess", values);
+        setGlobalStatus("Acceso Premium actualizado y registrado en auditoría.", "success");
+        await openUser(user.userId);
+      } catch (error) { setGlobalStatus(message(error), "error"); }
+      finally { setFormBusy(form, false); }
+    });
+    root.append(form);
+  }
+
+  function renderFeatureAccess(root, data) {
+    const access = data.featureAccess || {};
+    const catalog = access.featureCatalog || [];
+    const manual = access.manualFeatureEntitlements || {};
+    const sources = access.featureSources || {};
+    root.append(el("h3", "", "Permisos Premium por función"));
+    const description = el("p", "section-copy", "El plan Premium habilita el catálogo completo. Las autorizaciones manuales permiten habilitar funciones concretas sin cambiar el plan.");
+    const note = labeledInput("Nota opcional para el historial", "featureNote", "text", "", "Motivo o referencia");
+    const list = el("div", "feature-access-list");
+    if (!catalog.length) list.append(empty("No hay funciones Premium configuradas."));
+    catalog.forEach((feature) => {
+      const row = el("div", "feature-access-row");
+      const copy = el("div");
+      copy.append(el("strong", "", feature.name), el("small", "", feature.description));
+      const source = sources[feature.key] || "BLOCKED";
+      const controls = el("div", "feature-access-controls");
+      controls.append(badge(featureSourceLabel(source), `feature-${source.toLowerCase()}`));
+      const enabled = manual[feature.key] === true;
+      const button = actionButton(enabled ? "Revocar autorización" : "Autorizar", enabled ? "button button-danger button-small" : "button button-secondary button-small");
+      button.disabled = data.user.status === "DELETED";
+      button.addEventListener("click", async () => {
+        const verb = enabled ? "revocar" : "autorizar";
+        if (!window.confirm(`¿Confirmas ${verb} ${feature.name}?`)) return;
+        setButtonBusy(button, true, enabled ? "Revocando…" : "Autorizando…");
+        try {
+          await adminRequest(enabled ? "adminRemoveFeatureEntitlement" : "adminSetFeatureEntitlement", {
+            userId: data.user.userId,
+            featureKey: feature.key,
+            enabled: !enabled,
+            note: note.querySelector("input").value.trim()
+          });
+          setGlobalStatus("Permiso de función actualizado.", "success");
+          await openUser(data.user.userId);
+        } catch (error) { setGlobalStatus(message(error), "error"); }
+        finally { setButtonBusy(button, false, enabled ? "Revocar autorización" : "Autorizar"); }
+      });
+      controls.append(button);
+      row.append(copy, controls);
+      list.append(row);
+    });
+    const bulk = el("div", "inline-form-actions");
+    const grantAll = actionButton("Autorizar todas manualmente", "button button-secondary button-small");
+    const revokeAll = actionButton("Revocar autorizaciones manuales", "button button-quiet button-small");
+    grantAll.addEventListener("click", () => updateAllFeatureEntitlements(data, true, note.querySelector("input").value.trim(), grantAll));
+    revokeAll.addEventListener("click", () => updateAllFeatureEntitlements(data, false, note.querySelector("input").value.trim(), revokeAll));
+    bulk.append(grantAll, revokeAll);
+    root.append(description, note, bulk, list);
+  }
+
+  async function updateAllFeatureEntitlements(data, enabled, note, button) {
+    if (state.busy || !window.confirm(enabled ? "¿Autorizar manualmente todas las funciones?" : "¿Revocar todas las autorizaciones manuales?")) return;
+    const access = data.featureAccess || {};
+    const catalog = access.featureCatalog || [];
+    const manual = access.manualFeatureEntitlements || {};
+    setButtonBusy(button, true, "Procesando…");
+    state.busy = true;
+    try {
+      for (const feature of catalog) {
+        if (manual[feature.key] === enabled) continue;
+        await adminRequest(enabled ? "adminSetFeatureEntitlement" : "adminRemoveFeatureEntitlement", {
+          userId: data.user.userId, featureKey: feature.key, enabled, note
+        });
+      }
+      setGlobalStatus("Permisos Premium actualizados.", "success");
+      await openUser(data.user.userId);
+    } catch (error) { setGlobalStatus(message(error), "error"); }
+    finally { state.busy = false; setButtonBusy(button, false, enabled ? "Autorizar todas manualmente" : "Revocar autorizaciones manuales"); }
+  }
+
+  function featureSourceLabel(source) {
+    return { PREMIUM: "Incluido por Premium", MANUAL: "Autorizado manualmente", BLOCKED: "Bloqueado", ACCOUNT_BLOCKED: "Suspendido por la cuenta" }[source] || "Bloqueado";
   }
 
   function openAction(action, user) {
@@ -512,7 +627,7 @@
     const select = valueWrap.querySelector("select");
     select.replaceChildren();
     if (action === "plan") [["FREE", "Free"], ["PREMIUM", "Premium"]].forEach(([v, l]) => select.append(option(v, l, user.plan === v)));
-    if (action === "status") [["ACTIVE", "Activo"], ["SUSPENDED", "Suspendido"], ["REVOKED", "Revocado"], ["DELETED", "Eliminado"]].forEach(([v, l]) => select.append(option(v, l, user.status === v)));
+    if (action === "status") [["ACTIVE", "Activo"], ["SUSPENDED", "Suspendido"], ["DISABLED", "Desactivado"], ["REVOKED", "Revocado"], ["DELETED", "Eliminado"]].forEach(([v, l]) => select.append(option(v, l, user.status === v)));
     if (action === "role") [["USER", "Usuario"], ["ADMIN", "Administrador"]].forEach(([v, l]) => select.append(option(v, l, user.role === v)));
     setStatus(by("[data-action-status]"), "");
     dialog.showModal();
@@ -666,7 +781,7 @@
   function el(tag, className = "", text) { const element = document.createElement(tag); if (className) element.className = className; if (text !== undefined) element.textContent = String(text); return element; }
   function message(error) { return error && error.message || "No fue posible completar la solicitud."; }
   function truncate(value, length) { const text = String(value || ""); return text.length > length ? `${text.slice(0, length - 1)}…` : text; }
-  function translateStatus(value) { return { ACTIVE: "Activo", SUSPENDED: "Suspendido", REVOKED: "Revocado", DELETED: "Eliminado" }[value] || value || ""; }
+  function translateStatus(value) { return { ACTIVE: "Activo", SUSPENDED: "Suspendido", DISABLED: "Desactivado", REVOKED: "Revocado", DELETED: "Eliminado" }[value] || value || ""; }
   function platformName(value) { return { WINDOWS: "Windows", ANDROID: "Android", IOS: "iPhone", MACOS: "macOS", LINUX: "Linux" }[value] || value || ""; }
   function formatDate(value) { if (!value) return "No disponible"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "No disponible" : new Intl.DateTimeFormat("es", { dateStyle: "medium" }).format(date); }
   function formatDateTime(value) { if (!value) return "No disponible"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "No disponible" : new Intl.DateTimeFormat("es", { dateStyle: "short", timeStyle: "short" }).format(date); }
