@@ -47,8 +47,40 @@
 
 .code-panel .button { margin-top: 14px; }
 
+.activation-unavailable p { margin: 0 0 14px; }
+
+.announcement-date { font-size: 11px; }
+
+.security-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  margin: 20px 0 26px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.security-setting strong,
+.security-setting small { display: block; }
+.security-setting small { margin-top: 4px; color: var(--ink-soft); }
+
+.portal-dialog { width: min(620px, calc(100% - 28px)); }
+.portal-support-form { display: grid; gap: 16px; margin-top: 22px; }
+.portal-faq { display: grid; gap: 10px; margin-top: 22px; }
+.portal-faq details { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.portal-faq summary { padding: 15px 18px; font-weight: 720; cursor: pointer; }
+.portal-faq p { margin: -2px 18px 17px; color: var(--ink-soft); }
+.portal-faq .button { margin-top: 8px; }
+
+html[data-theme="dark"] .security-setting,
+html[data-theme="dark"] .portal-faq details { background: #0d1827; }
+
 @media (max-width: 700px) {
   .portal-header { position: static; }
   .feature-entitlement-list { grid-template-columns: 1fr; }
   .portal-header-actions .theme-toggle-label { display: none; }
+  .security-setting { align-items: stretch; flex-direction: column; }
 }

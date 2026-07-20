@@ -8,18 +8,18 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'self'; form-action 'self'">
   <title>Mi portal — Payment Organizer</title>
   <link rel="icon" type="image/png" href="../assets/brand/payment-organizer-logo.png">
-  <link rel="stylesheet" href="../styles.css?v=1.1.3">
-  <link rel="stylesheet" href="./portal.css?v=1.1.3">
-  <script src="../shared/config.js?v=1.1.3" defer></script>
-  <script src="../shared/api-client.js?v=1.1.3" defer></script>
-  <script src="../shared/helpers.js?v=1.1.3" defer></script>
-  <script src="./portal.js?v=1.1.3" defer></script>
+  <link rel="stylesheet" href="../styles.css?v=1.2.0">
+  <link rel="stylesheet" href="./portal.css?v=1.2.0">
+  <script src="../shared/config.js?v=1.2.0" defer></script>
+  <script src="../shared/api-client.js?v=1.2.0" defer></script>
+  <script src="../shared/helpers.js?v=1.2.0" defer></script>
+  <script src="./portal.js?v=1.2.0" defer></script>
 </head>
 <body class="portal-body">
   <a class="skip-link" href="#portal-content">Saltar al contenido</a>
   <header class="portal-header">
     <div class="shell header-inner">
-      <a class="brand" href="../" aria-label="Payment Organizer, página principal">
+      <a class="brand" href="./" aria-label="Payment Organizer, mi portal">
         <img src="../assets/brand/payment-organizer-logo.png" alt="" width="42" height="42">
         <span>Payment Organizer</span>
       </a>
@@ -58,6 +58,7 @@
               <div><dt>Registro</dt><dd data-profile-created></dd></div>
               <div><dt>Último acceso</dt><dd data-profile-last-login></dd></div>
               <div><dt>Dispositivos</dt><dd data-device-count></dd></div>
+              <div><dt>Verificación en dos pasos</dt><dd data-two-factor-status></dd></div>
               <div><dt>Inicio Premium</dt><dd data-premium-start></dd></div>
               <div><dt>Expiración Premium</dt><dd data-premium-expiry></dd></div>
             </dl>
@@ -68,7 +69,10 @@
               <div><h2 id="activation-title">Activar Premium</h2><p>Genera un código temporal para un dispositivo.</p></div>
               <button class="button button-primary button-small" type="button" data-generate-code>Generar código</button>
             </div>
-            <div class="empty-state" data-activation-free hidden>Esta opción aparece cuando tu cuenta tiene un plan Premium activo.</div>
+            <div class="empty-state activation-unavailable" data-activation-free hidden>
+              <p data-activation-message>Esta opción aparece cuando tu cuenta tiene un plan Premium activo.</p>
+              <button class="button button-secondary button-small" type="button" data-request-premium>Solicitar Premium</button>
+            </div>
             <div class="code-panel" data-code-panel hidden>
               <p>Código de un solo uso</p>
               <div class="activation-code" data-activation-code></div>
@@ -103,16 +107,21 @@
 
           <section class="portal-card" aria-labelledby="help-title">
             <h2 id="help-title">Centro de ayuda</h2>
-            <p>Consulta respuestas sobre privacidad, activación, compatibilidad, actualizaciones y recuperación de acceso.</p>
+            <p>Consulta respuestas o envía un mensaje sin salir de tu cuenta.</p>
             <div class="hero-actions">
-              <a class="button button-secondary" href="../#preguntas">Ver preguntas frecuentes</a>
-              <a class="button button-quiet" href="../#contacto">Contactar soporte</a>
+              <button class="button button-secondary" type="button" data-open-help="faq">Ver preguntas frecuentes</button>
+              <button class="button button-quiet" type="button" data-open-help="support">Contactar soporte</button>
             </div>
           </section>
 
           <section class="portal-card portal-card-wide account-danger" aria-labelledby="security-title">
             <h2 id="security-title">Seguridad de la cuenta</h2>
-            <p class="danger-copy">Puedes cerrar todas las sesiones o solicitar la eliminación lógica de tu cuenta. Ninguna de estas acciones borra los datos financieros guardados en tu aplicación.</p>
+            <p>La contraseña protege el acceso. La verificación en dos pasos por correo es opcional y puedes activarla o desactivarla aquí.</p>
+            <div class="security-setting">
+              <div><strong data-two-factor-heading>Verificación en dos pasos</strong><small data-two-factor-copy></small></div>
+              <button class="button button-secondary" type="button" data-toggle-two-factor></button>
+            </div>
+            <p class="danger-copy">También puedes cerrar todas las sesiones o solicitar la eliminación lógica de tu cuenta. Ninguna de estas acciones borra los datos financieros guardados en tu aplicación.</p>
             <div class="hero-actions">
               <button class="button button-secondary" type="button" data-revoke-sessions>Cerrar todas las sesiones</button>
               <button class="button button-danger" type="button" data-delete-account>Solicitar eliminación</button>
@@ -136,6 +145,46 @@
       </div>
       <p class="form-status" role="status" data-confirm-status></p>
     </form>
+  </dialog>
+
+  <dialog class="auth-dialog portal-dialog" data-help-dialog aria-labelledby="help-dialog-title">
+    <button class="dialog-close" type="button" data-close-help aria-label="Cerrar">×</button>
+    <p class="eyebrow">Centro de ayuda</p>
+    <h2 id="help-dialog-title" data-help-dialog-title>Preguntas frecuentes</h2>
+    <div class="portal-faq" data-help-faq>
+      <details><summary>¿Cómo activo Premium en la aplicación?</summary><p>Cuando tu cuenta sea Premium, genera el código de un solo uso en este portal. En la app abre Configuración, selecciona Activar plan e introduce el código.</p></details>
+      <details><summary>¿Por qué todavía no aparece ningún dispositivo?</summary><p>Un dispositivo aparece después de canjear correctamente un código en Android, iPhone o Windows. El portal no crea dispositivos ficticios.</p></details>
+      <details><summary>¿Cómo instalo una actualización?</summary><p>Usa la sección Versiones y descargas del portal o el botón Buscar actualizaciones de la aplicación. En iPhone con AltStore debes renovar la firma cuando corresponda.</p></details>
+      <details><summary>¿Dónde se guardan mis datos financieros?</summary><p>Los compromisos y pagos permanecen localmente en tu dispositivo. El portal administra la cuenta, el plan y las activaciones.</p></details>
+      <details><summary>¿Cómo recupero mi cuenta?</summary><p>En la pantalla de inicio de sesión selecciona Olvidé mi contraseña. Recibirás un código temporal para crear una contraseña nueva.</p></details>
+      <button class="button button-primary button-full" type="button" data-switch-to-support>Contactar soporte</button>
+    </div>
+    <form class="portal-support-form" data-portal-support-form hidden novalidate>
+      <label>Nombre<input name="name" type="text" autocomplete="name" minlength="2" maxlength="100" readonly required></label>
+      <label>Correo<input name="email" type="email" autocomplete="email" maxlength="254" readonly required></label>
+      <label>Asunto<input name="subject" type="text" minlength="3" maxlength="150" required></label>
+      <label>Mensaje<textarea name="message" rows="5" minlength="10" maxlength="3000" required></textarea></label>
+      <label class="honeypot" aria-hidden="true">Sitio web<input name="website" type="text" tabindex="-1" autocomplete="off"></label>
+      <button class="button button-primary button-full" type="submit">Enviar mensaje</button>
+      <button class="button button-quiet button-full" type="button" data-switch-to-faq>Volver a preguntas frecuentes</button>
+      <p class="form-status" role="status" data-support-status></p>
+    </form>
+  </dialog>
+
+  <dialog class="auth-dialog portal-dialog" data-two-factor-dialog aria-labelledby="two-factor-dialog-title">
+    <button class="dialog-close" type="button" data-close-two-factor aria-label="Cerrar">×</button>
+    <p class="eyebrow">Seguridad</p>
+    <h2 id="two-factor-dialog-title" data-two-factor-dialog-title></h2>
+    <p data-two-factor-dialog-copy></p>
+    <form data-enable-two-factor-form hidden novalidate>
+      <label>Código de seguridad<input class="code-input" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+      <button class="button button-primary button-full" type="submit">Activar verificación</button>
+    </form>
+    <form data-disable-two-factor-form hidden novalidate>
+      <label>Contraseña actual<input name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required></label>
+      <button class="button button-primary button-full" type="submit">Desactivar verificación</button>
+    </form>
+    <p class="form-status dialog-status" role="status" data-two-factor-dialog-status></p>
   </dialog>
 </body>
 </html>

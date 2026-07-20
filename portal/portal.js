@@ -24,6 +24,20 @@
     document.querySelector("[data-copy-code]").addEventListener("click", copyActivationCode);
     document.querySelector("[data-revoke-sessions]").addEventListener("click", () => openConfirmation("sessions"));
     document.querySelector("[data-delete-account]").addEventListener("click", () => openConfirmation("delete"));
+    document.querySelector("[data-request-premium]").addEventListener("click", () => openHelp("support", "Solicitud de Premium"));
+    document.querySelectorAll("[data-open-help]").forEach((button) => button.addEventListener("click", () => openHelp(button.dataset.openHelp)));
+    document.querySelector("[data-toggle-two-factor]").addEventListener("click", openTwoFactorDialog);
+    const helpDialog = document.querySelector("[data-help-dialog]");
+    helpDialog.querySelector("[data-close-help]").addEventListener("click", () => helpDialog.close());
+    helpDialog.querySelector("[data-switch-to-support]").addEventListener("click", () => showHelpMode("support"));
+    helpDialog.querySelector("[data-switch-to-faq]").addEventListener("click", () => showHelpMode("faq"));
+    helpDialog.querySelector("[data-portal-support-form]").addEventListener("submit", submitPortalSupport);
+    helpDialog.addEventListener("click", (event) => { if (event.target === helpDialog) helpDialog.close(); });
+    const twoFactorDialog = document.querySelector("[data-two-factor-dialog]");
+    twoFactorDialog.querySelector("[data-close-two-factor]").addEventListener("click", () => twoFactorDialog.close());
+    twoFactorDialog.querySelector("[data-enable-two-factor-form]").addEventListener("submit", confirmTwoFactorSetup);
+    twoFactorDialog.querySelector("[data-disable-two-factor-form]").addEventListener("submit", disableTwoFactor);
+    twoFactorDialog.addEventListener("click", (event) => { if (event.target === twoFactorDialog) twoFactorDialog.close(); });
     const dialog = document.querySelector("[data-confirm-dialog]");
     dialog.querySelectorAll("[data-cancel-confirm]").forEach((button) => button.addEventListener("click", () => dialog.close()));
     dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
@@ -53,6 +67,7 @@
     setText("[data-profile-status]", translateStatus(profile.status));
     setText("[data-profile-created]", formatDate(profile.registeredAt));
     setText("[data-profile-last-login]", formatDate(profile.lastPortalLoginAt));
+    setText("[data-two-factor-status]", profile.twoFactorEnabled ? "Activada" : "Desactivada");
     setText("[data-device-count]", `${data.activeDeviceCount || 0} de ${data.deviceLimit || 0} activos`);
     setText("[data-premium-start]", formatDate(profile.premiumActivatedAt));
     setText("[data-premium-expiry]", formatDate(profile.premiumExpiresAt));
@@ -64,11 +79,12 @@
     document.querySelector("[data-generate-code]").hidden = !canActivate;
     const unavailable = document.querySelector("[data-activation-free]");
     unavailable.hidden = canActivate;
-    unavailable.textContent = plan !== "PREMIUM"
+    setText("[data-activation-message]", plan !== "PREMIUM"
       ? "Código de activación no disponible para el plan Free."
       : status !== "ACTIVE"
         ? "La cuenta debe estar activa para generar un código."
-        : "Configura al menos un dispositivo permitido para generar un código.";
+        : "No hay cupos de dispositivos disponibles para generar un código.");
+    document.querySelector("[data-request-premium]").hidden = plan === "PREMIUM";
     setText("[data-device-limit]", deviceLimit === 1
       ? "Puedes mantener 1 dispositivo activo."
       : `Puedes mantener hasta ${deviceLimit} dispositivos activos.`);
@@ -76,6 +92,7 @@
     renderAnnouncements(data.announcements || []);
     renderDownloads(data.downloads || []);
     renderFeatureEntitlements(data.featureCatalog || [], data.featureEntitlements || {}, plan, status);
+    renderSecurity(profile);
   }
 
   function renderFeatureEntitlements(catalog, entitlements, plan, status) {
@@ -109,7 +126,7 @@
     const container = document.querySelector("[data-device-list]");
     container.replaceChildren();
     if (!devices.length) {
-      container.append(emptyState("Aún no hay dispositivos asociados a tu cuenta."));
+      container.append(emptyState("Aún no hay dispositivos asociados. Genera un código Premium y canjéalo en Configuración > Activar plan dentro de la aplicación."));
       return;
     }
     devices.forEach((device) => {
@@ -155,6 +172,12 @@
       const body = document.createElement("small");
       body.textContent = announcement.body;
       copy.append(title, body);
+      if (announcement.publishedAt) {
+        const date = document.createElement("small");
+        date.className = "announcement-date";
+        date.textContent = formatDate(announcement.publishedAt);
+        copy.append(date);
+      }
       item.append(copy);
       container.append(item);
     });
@@ -233,6 +256,130 @@
     }
   }
 
+  function renderSecurity(profile) {
+    const enabled = profile.twoFactorEnabled === true;
+    setText("[data-two-factor-heading]", enabled ? "Verificación en dos pasos activada" : "Verificación en dos pasos desactivada");
+    setText("[data-two-factor-copy]", enabled
+      ? "Además de tu contraseña, se pedirá un código enviado a tu correo al iniciar sesión."
+      : "Puedes pedir un código adicional por correo después de introducir tu contraseña.");
+    const button = document.querySelector("[data-toggle-two-factor]");
+    button.textContent = enabled ? "Desactivar" : "Activar";
+  }
+
+  function openHelp(mode, subject) {
+    const profile = state.profile && state.profile.profile || {};
+    const form = document.querySelector("[data-portal-support-form]");
+    form.elements.name.value = profile.name || "";
+    form.elements.email.value = profile.email || "";
+    if (subject) form.elements.subject.value = subject;
+    showHelpMode(mode === "support" ? "support" : "faq");
+    const dialog = document.querySelector("[data-help-dialog]");
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function showHelpMode(mode) {
+    const support = mode === "support";
+    const dialog = document.querySelector("[data-help-dialog]");
+    dialog.querySelector("[data-help-faq]").hidden = support;
+    dialog.querySelector("[data-portal-support-form]").hidden = !support;
+    setText("[data-help-dialog-title]", support ? "Contactar soporte" : "Preguntas frecuentes");
+    setStatus(dialog.querySelector("[data-support-status]"), "");
+    window.setTimeout(() => dialog.querySelector(support ? "textarea" : "details summary")?.focus(), 30);
+  }
+
+  async function submitPortalSupport(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!validateForm(form) || state.busy) return;
+    state.busy = true;
+    form.querySelectorAll("button, input, textarea").forEach((control) => { control.disabled = true; });
+    const status = form.querySelector("[data-support-status]");
+    setStatus(status, "Enviando mensaje…");
+    try {
+      const result = await api.request("submitContact", {
+        name: form.elements.name.value.trim(),
+        email: form.elements.email.value.trim().toLowerCase(),
+        subject: form.elements.subject.value.trim(),
+        message: form.elements.message.value.trim(),
+        website: form.elements.website.value
+      });
+      form.elements.subject.value = "";
+      form.elements.message.value = "";
+      setStatus(status, `Mensaje recibido${result.reference ? ` · Referencia ${result.reference}` : ""}.`, "success");
+    } catch (error) {
+      setStatus(status, error.message || "No fue posible enviar el mensaje.", "error");
+    } finally {
+      state.busy = false;
+      form.querySelectorAll("button, input, textarea").forEach((control) => { control.disabled = false; });
+      form.elements.name.readOnly = true;
+      form.elements.email.readOnly = true;
+    }
+  }
+
+  async function openTwoFactorDialog(event) {
+    if (state.busy) return;
+    const enabled = Boolean(state.profile && state.profile.profile && state.profile.profile.twoFactorEnabled);
+    const dialog = document.querySelector("[data-two-factor-dialog]");
+    const enableForm = dialog.querySelector("[data-enable-two-factor-form]");
+    const disableForm = dialog.querySelector("[data-disable-two-factor-form]");
+    enableForm.hidden = enabled;
+    disableForm.hidden = !enabled;
+    enableForm.reset();
+    disableForm.reset();
+    setText("[data-two-factor-dialog-title]", enabled ? "Desactivar verificación" : "Activar verificación");
+    setText("[data-two-factor-dialog-copy]", enabled
+      ? "Confirma tu contraseña actual. Las otras sesiones abiertas se cerrarán."
+      : "Enviaremos un código a tu correo. Las otras sesiones abiertas se cerrarán al confirmar.");
+    setStatus(dialog.querySelector("[data-two-factor-dialog-status]"), "");
+    if (!dialog.open) dialog.showModal();
+    if (enabled) {
+      disableForm.elements.password.focus();
+      return;
+    }
+    const button = event.currentTarget;
+    setButtonBusy(button, true, "Enviando…");
+    try {
+      const result = await api.request("requestTwoFactorSetup", {}, { token: session.token });
+      setStatus(dialog.querySelector("[data-two-factor-dialog-status]"), result.message || "Revisa tu correo e introduce el código.", "success");
+      enableForm.elements.code.focus();
+    } catch (error) {
+      setStatus(dialog.querySelector("[data-two-factor-dialog-status]"), error.message || "No fue posible enviar el código.", "error");
+    } finally {
+      setButtonBusy(button, false, "Activar");
+    }
+  }
+
+  async function confirmTwoFactorSetup(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!validateForm(form) || state.busy) return;
+    await updateTwoFactor(form, "confirmTwoFactorSetup", { code: form.elements.code.value.replace(/\D/g, "") }, "Verificación en dos pasos activada.");
+  }
+
+  async function disableTwoFactor(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!validateForm(form) || state.busy) return;
+    await updateTwoFactor(form, "disableTwoFactor", { password: form.elements.password.value }, "Verificación en dos pasos desactivada.");
+  }
+
+  async function updateTwoFactor(form, action, payload, successMessage) {
+    state.busy = true;
+    form.querySelectorAll("button, input").forEach((control) => { control.disabled = true; });
+    const status = document.querySelector("[data-two-factor-dialog-status]");
+    try {
+      await api.request(action, payload, { token: session.token });
+      setGlobalStatus(successMessage, "success");
+      document.querySelector("[data-two-factor-dialog]").close();
+      await loadPortal();
+    } catch (error) {
+      setStatus(status, error.message || "No fue posible actualizar la configuración.", "error");
+    } finally {
+      state.busy = false;
+      form.querySelectorAll("button, input").forEach((control) => { control.disabled = false; });
+    }
+  }
+
   async function logout() {
     const button = document.querySelector("[data-logout]");
     setButtonBusy(button, true, "Cerrando…");
@@ -306,6 +453,17 @@
     element.className = "empty-state";
     element.textContent = message;
     return element;
+  }
+
+  function validateForm(form) {
+    let valid = true;
+    form.querySelectorAll("input, textarea").forEach((control) => {
+      const controlValid = control.checkValidity();
+      control.setAttribute("aria-invalid", String(!controlValid));
+      if (!controlValid) valid = false;
+    });
+    if (!valid) form.reportValidity();
+    return valid;
   }
 
   function setButtonBusy(button, busy, text) {

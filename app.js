@@ -6,6 +6,8 @@
   const state = {
     authMode: "login",
     pendingEmail: "",
+    pendingPassword: "",
+    confirmationPurpose: "",
     publicSettings: {},
     busy: false
   };
@@ -132,10 +134,13 @@
     dialog.querySelectorAll("[data-auth-tab]").forEach((tab) => {
       tab.addEventListener("click", () => selectAuthMode(tab.dataset.authTab));
     });
-    dialog.querySelector("[data-login-form]").addEventListener("submit", requestLoginCode);
+    dialog.querySelector("[data-login-form]").addEventListener("submit", passwordLogin);
     dialog.querySelector("[data-register-form]").addEventListener("submit", requestRegistrationCode);
+    dialog.querySelector("[data-reset-form]").addEventListener("submit", requestPasswordReset);
     dialog.querySelector("[data-code-form]").addEventListener("submit", confirmCode);
     dialog.querySelector("[data-auth-back]").addEventListener("click", resetAuthRequest);
+    dialog.querySelector("[data-start-reset]").addEventListener("click", showPasswordReset);
+    dialog.querySelector("[data-reset-cancel]").addEventListener("click", () => selectAuthMode("login"));
   }
 
   function openAuth(mode) {
@@ -153,22 +158,40 @@
     const register = mode === "register";
     dialog.querySelector("[data-auth-title]").textContent = register ? "Crear cuenta" : "Iniciar sesión";
     dialog.querySelector("[data-auth-description]").textContent = register
-      ? "Confirma tu correo con un código seguro. No necesitas crear una contraseña."
-      : "Te enviaremos un código de seis dígitos. No necesitas contraseña.";
+      ? "Crea una contraseña y confirma tu correo con un código de un solo uso."
+      : "Introduce tu correo y contraseña. El código adicional sólo se pedirá si activaste la verificación en dos pasos.";
     dialog.querySelector("[data-login-form]").hidden = register;
     dialog.querySelector("[data-register-form]").hidden = !register;
+    dialog.querySelector("[data-reset-form]").hidden = true;
+    dialog.querySelector("[data-auth-request]").hidden = false;
+    dialog.querySelector("[data-auth-confirm]").hidden = true;
     dialog.querySelectorAll("[data-auth-tab]").forEach((tab) => {
       tab.setAttribute("aria-selected", String(tab.dataset.authTab === mode));
     });
     setStatus(dialog.querySelector("[data-auth-status]"), "");
   }
 
-  async function requestLoginCode(event) {
+  async function passwordLogin(event) {
     event.preventDefault();
     const form = event.currentTarget;
-    if (!validateForm(form)) return;
+    if (!validateForm(form) || state.busy) return;
     const email = window.PaymentValidation.normalizeEmail(form.elements.email.value);
-    await requestCode("requestLoginCode", { email, sessionType: "PORTAL" }, email, form);
+    setBusy(form, true);
+    const status = document.querySelector("[data-auth-status]");
+    setStatus(status, "Comprobando acceso…");
+    try {
+      const result = await api.request("passwordLogin", { email, password: form.elements.password.value });
+      if (result.requiresTwoFactor) {
+        state.pendingEmail = email;
+        showCodeConfirmation("twoFactorLogin", result.message || "Introduce el código enviado a tu correo.");
+        return;
+      }
+      finishPortalLogin(result);
+    } catch (error) {
+      setStatus(status, friendlyError(error), "error");
+    } finally {
+      setBusy(form, false);
+    }
   }
 
   async function requestRegistrationCode(event) {
@@ -176,16 +199,26 @@
     const form = event.currentTarget;
     if (!validateForm(form)) return;
     const email = window.PaymentValidation.normalizeEmail(form.elements.email.value);
+    if (!passwordsMatch(form)) return;
+    state.pendingPassword = form.elements.password.value;
     await requestCode("requestRegistrationCode", {
       name: form.elements.name.value.trim(),
       email,
       termsAccepted: form.elements.termsAccepted.checked,
       privacyAccepted: form.elements.privacyAccepted.checked,
       requestFingerprint: getRequestNonce()
-    }, email, form);
+    }, email, form, "registration");
   }
 
-  async function requestCode(action, payload, email, form) {
+  async function requestPasswordReset(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!validateForm(form)) return;
+    const email = window.PaymentValidation.normalizeEmail(form.elements.email.value);
+    await requestCode("requestPasswordReset", { email }, email, form, "passwordReset");
+  }
+
+  async function requestCode(action, payload, email, form, purpose) {
     if (state.busy) return;
     setBusy(form, true);
     const status = document.querySelector("[data-auth-status]");
@@ -193,10 +226,7 @@
     try {
       const result = await api.request(action, payload);
       state.pendingEmail = email;
-      document.querySelector("[data-auth-request]").hidden = true;
-      document.querySelector("[data-auth-confirm]").hidden = false;
-      setStatus(status, result.message || "Si la solicitud es válida, recibirás un código por correo.", "success");
-      document.querySelector("[data-code-form] input").focus();
+      showCodeConfirmation(purpose, result.message || "Si la solicitud es válida, recibirás un código por correo.");
     } catch (error) {
       setStatus(status, friendlyError(error), "error");
     } finally {
@@ -218,12 +248,26 @@
     const status = document.querySelector("[data-auth-status]");
     setStatus(status, "Confirmando acceso…");
     try {
-      const action = state.authMode === "register" ? "confirmRegistration" : "confirmLogin";
       const payload = { email: state.pendingEmail, code };
-      if (state.authMode === "login") payload.sessionType = "PORTAL";
+      let action;
+      if (state.confirmationPurpose === "registration") {
+        action = "confirmRegistration";
+        payload.password = state.pendingPassword;
+      } else if (state.confirmationPurpose === "passwordReset") {
+        if (!passwordsMatch(form)) return;
+        action = "confirmPasswordReset";
+        payload.password = form.elements.password.value;
+      } else {
+        action = "confirmTwoFactorLogin";
+      }
       const result = await api.request(action, payload);
-      api.savePortalSession(result.session);
-      window.location.assign(config.routes && config.routes.portal || "./portal/");
+      if (state.confirmationPurpose === "passwordReset") {
+        form.reset();
+        selectAuthMode("login");
+        setStatus(status, "Contraseña actualizada. Ya puedes iniciar sesión.", "success");
+      } else {
+        finishPortalLogin(result);
+      }
     } catch (error) {
       setStatus(status, friendlyError(error), "error");
     } finally {
@@ -234,10 +278,61 @@
   function resetAuthRequest() {
     const dialog = document.querySelector("[data-auth-dialog]");
     state.pendingEmail = "";
-    dialog.querySelector("[data-auth-request]").hidden = false;
-    dialog.querySelector("[data-auth-confirm]").hidden = true;
+    state.pendingPassword = "";
+    state.confirmationPurpose = "";
     dialog.querySelector("[data-code-form]").reset();
+    selectAuthMode(state.authMode === "register" ? "register" : "login");
+  }
+
+  function showPasswordReset() {
+    const dialog = document.querySelector("[data-auth-dialog]");
+    state.authMode = "reset";
+    state.pendingPassword = "";
+    dialog.querySelector("[data-auth-title]").textContent = "Recuperar acceso";
+    dialog.querySelector("[data-auth-description]").textContent = "Te enviaremos un código para crear una contraseña nueva.";
+    dialog.querySelector("[data-login-form]").hidden = true;
+    dialog.querySelector("[data-register-form]").hidden = true;
+    dialog.querySelector("[data-reset-form]").hidden = false;
+    dialog.querySelectorAll("[data-auth-tab]").forEach((tab) => tab.setAttribute("aria-selected", "false"));
     setStatus(dialog.querySelector("[data-auth-status]"), "");
+    dialog.querySelector("[data-reset-form] input").focus();
+  }
+
+  function showCodeConfirmation(purpose, message) {
+    const dialog = document.querySelector("[data-auth-dialog]");
+    state.confirmationPurpose = purpose;
+    dialog.querySelector("[data-auth-request]").hidden = true;
+    dialog.querySelector("[data-auth-confirm]").hidden = false;
+    const resetting = purpose === "passwordReset";
+    dialog.querySelector("[data-code-title]").textContent = resetting ? "Crea una contraseña nueva" : purpose === "twoFactorLogin" ? "Verifica tu acceso" : "Confirma tu correo";
+    dialog.querySelector("[data-code-description]").textContent = resetting
+      ? "Introduce el código recibido y tu contraseña nueva."
+      : "El código tiene seis dígitos, vence en diez minutos y sólo puede utilizarse una vez.";
+    const passwordFields = dialog.querySelector("[data-reset-password-fields]");
+    passwordFields.hidden = !resetting;
+    passwordFields.querySelectorAll("input").forEach((input) => { input.required = resetting; });
+    setStatus(dialog.querySelector("[data-auth-status]"), message, "success");
+    dialog.querySelector("[data-code-form] input[name=code]").focus();
+  }
+
+  function passwordsMatch(form) {
+    const password = form.elements.password;
+    const confirmation = form.elements.passwordConfirm;
+    if (!password || !confirmation) return true;
+    const matches = password.value === confirmation.value;
+    confirmation.setCustomValidity(matches ? "" : "Las contraseñas no coinciden.");
+    confirmation.setAttribute("aria-invalid", String(!matches));
+    if (!matches) {
+      confirmation.reportValidity();
+      setStatus(document.querySelector("[data-auth-status]"), "Las contraseñas no coinciden.", "error");
+    }
+    return matches;
+  }
+
+  function finishPortalLogin(result) {
+    api.savePortalSession(result.session);
+    state.pendingPassword = "";
+    window.location.assign(config.routes && config.routes.portal || "./portal/");
   }
 
   function initializeContactForm() {

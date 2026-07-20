@@ -8,8 +8,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'">
   <title>Política de privacidad — Payment Organizer</title>
   <link rel="icon" type="image/png" href="assets/brand/payment-organizer-logo.png">
-  <link rel="stylesheet" href="styles.css?v=1.1.3">
-  <script src="shared/helpers.js?v=1.1.3" defer></script>
+  <link rel="stylesheet" href="styles.css?v=1.2.0">
+  <script src="shared/helpers.js?v=1.2.0" defer></script>
 </head>
 <body class="legal-page">
   <a class="skip-link" href="#legal-content">Saltar al contenido</a>
@@ -35,8 +35,8 @@
       <p>Si utilizas la función de respaldo, tú eliges cuándo exportar el archivo y dónde guardarlo. Eres responsable de proteger ese archivo y cualquier copia que realices.</p>
 
       <h2>3. Datos de cuenta y portal</h2>
-      <p>Para prestar el acceso web y administrar planes se pueden tratar: nombre, correo normalizado y visible, aceptación de términos y privacidad, verificación del correo, rol, plan, estado de la cuenta, fechas de registro y acceso, sesiones, solicitudes de eliminación y registros de seguridad.</p>
-      <p>Los códigos de correo y los tokens de sesión se almacenan únicamente como hashes en el backend. El código completo se utiliza sólo para enviarlo al correo solicitado y no debe aparecer en registros operativos.</p>
+      <p>Para prestar el acceso web y administrar planes se pueden tratar: nombre, correo normalizado y visible, aceptación de términos y privacidad, verificación del correo, hash y sal de la contraseña, estado de la verificación en dos pasos, rol, plan, estado de la cuenta, fechas de registro y acceso, sesiones, solicitudes de eliminación y registros de seguridad.</p>
+      <p>Las contraseñas, los códigos de correo y los tokens de sesión no se guardan en texto plano. El backend conserva hashes protegidos con un secreto del servidor. Los códigos completos sólo se utilizan para el envío solicitado y no deben aparecer en registros operativos.</p>
 
       <h2>4. Activación de dispositivos</h2>
       <p>Cuando activas un plan en la aplicación se pueden tratar un identificador aleatorio de instalación, plataforma, versión de la aplicación, versión del sistema operativo cuando sea apropiado, etiqueta editable, fechas de activación/validación y estado. El identificador de instalación y el token del dispositivo se guardan como hashes en el backend.</p>
@@ -46,7 +46,7 @@
       <p>Si envías el formulario de contacto se guardan tu nombre, correo, asunto, mensaje, estado de atención y fechas relacionadas. No incluyas contraseñas, códigos, tokens, datos bancarios ni información financiera personal en el mensaje.</p>
 
       <h2>6. Correos de seguridad y servicio</h2>
-      <p>Podemos enviar códigos de registro o acceso, confirmaciones de cuenta, cambios de plan, activaciones o revocaciones de dispositivos, estados de cuenta, versiones y confirmaciones de contacto. Estos mensajes no deben contener tokens completos, notas internas ni información financiera local.</p>
+      <p>Podemos enviar códigos para verificar el registro, recuperar la contraseña o completar la verificación en dos pasos, además de confirmaciones de cuenta, cambios de plan, activaciones o revocaciones de dispositivos, estados de cuenta, versiones y confirmaciones de contacto. Estos mensajes no deben contener contraseñas, tokens completos, notas internas ni información financiera local.</p>
 
       <h2>7. Almacenamiento inicial</h2>
       <p>Los datos web descritos se almacenan inicialmente mediante Google Apps Script y Google Sheets en una cuenta controlada por el propietario del servicio. Google puede procesar información técnica conforme a sus propios términos y políticas. El sistema mantiene hojas separadas para cuentas, códigos, sesiones, activaciones, dispositivos, configuración, versiones, anuncios, auditoría, contacto y errores seguros.</p>

@@ -8,12 +8,12 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'self'; form-action 'self'">
   <title>Payment Organizer — Tus compromisos, bajo control</title>
   <link rel="icon" type="image/png" href="assets/brand/payment-organizer-logo.png">
-  <link rel="stylesheet" href="styles.css?v=1.1.3">
-  <script src="shared/config.js?v=1.1.3" defer></script>
-  <script src="shared/api-client.js?v=1.1.3" defer></script>
-  <script src="shared/helpers.js?v=1.1.3" defer></script>
-  <script src="shared/validation.js?v=1.1.3" defer></script>
-  <script src="app.js?v=1.1.3" defer></script>
+  <link rel="stylesheet" href="styles.css?v=1.2.0">
+  <script src="shared/config.js?v=1.2.0" defer></script>
+  <script src="shared/api-client.js?v=1.2.0" defer></script>
+  <script src="shared/helpers.js?v=1.2.0" defer></script>
+  <script src="shared/validation.js?v=1.2.0" defer></script>
+  <script src="app.js?v=1.2.0" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#contenido">Saltar al contenido</a>
@@ -160,13 +160,13 @@
       <div class="shell account-panel reveal">
         <div>
           <p class="eyebrow">Tu cuenta web</p>
-          <h2>Regístrate con tu correo y entra sin contraseña.</h2>
-          <p>Recibirás un código de seis dígitos para verificar tu correo. Desde el portal podrás consultar tu plan, ver descargas habilitadas y gestionar las activaciones de tus dispositivos.</p>
+          <h2>Crea tu cuenta y protege el acceso con contraseña.</h2>
+          <p>Verificarás tu correo al registrarte. Después podrás iniciar sesión con tu contraseña y activar, si lo deseas, una verificación adicional por correo.</p>
         </div>
         <div class="account-actions">
           <button class="button button-primary" type="button" data-open-auth="register" data-access-control hidden>Crear mi cuenta</button>
           <button class="button button-secondary" type="button" data-open-auth="login" hidden>Ya tengo una cuenta</button>
-          <small>No guardamos contraseñas ni tus registros financieros en el portal.</small>
+          <small>La contraseña se protege con un hash del servidor. Tus registros financieros permanecen en tu dispositivo.</small>
         </div>
       </div>
     </section>
@@ -261,7 +261,7 @@
           <details class="reveal"><summary>¿En qué dispositivos funciona?</summary><p>El proyecto está preparado para Android, iPhone y Windows. Cada enlace aparece únicamente cuando su versión real ha sido verificada y publicada.</p></details>
           <details class="reveal"><summary>¿Cómo activo Premium?</summary><p>Cuando tu cuenta tenga Premium, genera un código temporal en el portal e introdúcelo en la sección Activar plan de la aplicación.</p></details>
           <details class="reveal"><summary>¿Qué pasa si no tengo internet?</summary><p>Tus datos básicos siguen disponibles localmente. Premium puede conservarse durante el período de gracia contado desde la última validación correcta.</p></details>
-          <details class="reveal"><summary>¿Cómo recupero el acceso al portal?</summary><p>Solicita un nuevo código por correo. No hay contraseña que recordar ni recuperar.</p></details>
+          <details class="reveal"><summary>¿Cómo recupero el acceso al portal?</summary><p>Solicita un código temporal por correo y crea una contraseña nueva. El código expira y sólo puede utilizarse una vez.</p></details>
           <details class="reveal"><summary>¿Cómo recibo actualizaciones y soporte?</summary><p>Las versiones y novedades habilitadas aparecen en el portal. También puedes usar el formulario de contacto de esta página.</p></details>
         </div>
       </div>
@@ -303,31 +303,46 @@
     <div data-auth-request>
       <p class="eyebrow">Acceso seguro</p>
       <h2 id="auth-title" data-auth-title>Iniciar sesión</h2>
-      <p data-auth-description>Te enviaremos un código de seis dígitos. No necesitas contraseña.</p>
+      <p data-auth-description>Introduce tu correo y contraseña para acceder.</p>
       <div class="auth-tabs" role="tablist" aria-label="Tipo de acceso">
         <button type="button" role="tab" aria-selected="true" data-auth-tab="login">Iniciar sesión</button>
         <button type="button" role="tab" aria-selected="false" data-auth-tab="register">Crear cuenta</button>
       </div>
       <form data-login-form novalidate>
         <label>Correo<input name="email" type="email" autocomplete="email" maxlength="254" required></label>
-        <button class="button button-primary button-full" type="submit">Enviar código</button>
+        <label>Contraseña<input name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required></label>
+        <button class="button button-primary button-full" type="submit">Iniciar sesión</button>
+        <button class="button button-quiet button-full" type="button" data-start-reset>Olvidé mi contraseña</button>
       </form>
       <form data-register-form novalidate hidden>
         <label>Nombre<input name="name" type="text" autocomplete="name" minlength="2" maxlength="100" required></label>
         <label>Correo<input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+        <label>Contraseña<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" required aria-describedby="password-help"></label>
+        <label>Confirmar contraseña<input name="passwordConfirm" type="password" autocomplete="new-password" minlength="10" maxlength="128" required></label>
+        <small id="password-help" class="field-help">Usa entre 10 y 128 caracteres, con letras y números.</small>
         <label class="check-field"><input name="termsAccepted" type="checkbox" required><span>Acepto los <a href="terms.html">términos de uso</a>.</span></label>
         <label class="check-field"><input name="privacyAccepted" type="checkbox" required><span>Acepto la <a href="privacy.html">política de privacidad</a>.</span></label>
-        <button class="button button-primary button-full" type="submit">Enviar código</button>
+        <button class="button button-primary button-full" type="submit">Verificar correo</button>
+      </form>
+      <form data-reset-form novalidate hidden>
+        <label>Correo de tu cuenta<input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+        <button class="button button-primary button-full" type="submit">Enviar código de recuperación</button>
+        <button class="button button-quiet button-full" type="button" data-reset-cancel>Volver al inicio de sesión</button>
       </form>
     </div>
     <div data-auth-confirm hidden>
       <p class="eyebrow">Revisa tu correo</p>
-      <h2>Introduce tu código</h2>
-      <p>El código tiene seis dígitos, vence en diez minutos y sólo puede utilizarse una vez.</p>
+      <h2 data-code-title>Introduce tu código</h2>
+      <p data-code-description>El código tiene seis dígitos, vence en diez minutos y sólo puede utilizarse una vez.</p>
       <form data-code-form novalidate>
         <label>Código de seguridad<input class="code-input" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+        <div data-reset-password-fields hidden>
+          <label>Nueva contraseña<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128"></label>
+          <label>Confirmar contraseña<input name="passwordConfirm" type="password" autocomplete="new-password" minlength="10" maxlength="128"></label>
+          <small class="field-help">Usa entre 10 y 128 caracteres, con letras y números.</small>
+        </div>
         <button class="button button-primary button-full" type="submit">Confirmar y continuar</button>
-        <button class="button button-quiet button-full" type="button" data-auth-back>Usar otro correo</button>
+        <button class="button button-quiet button-full" type="button" data-auth-back>Volver</button>
       </form>
     </div>
     <p class="form-status dialog-status" role="status" data-auth-status></p>

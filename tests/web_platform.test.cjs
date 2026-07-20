@@ -65,6 +65,30 @@ test('portal applies strict activation eligibility and exposes feature access', 
   assert.match(source, /deviceLimit > 0/);
   assert.match(source, /featureEntitlements/);
   assert.match(read('portal/index.html'), /data-copy-code/);
+  assert.match(read('portal/index.html'), /data-request-premium/);
+});
+
+test('customer authentication uses passwords with optional email 2FA and recovery', () => {
+  const source = read('app.js');
+  const page = read('index.html');
+  for (const action of ['passwordLogin', 'confirmTwoFactorLogin', 'requestPasswordReset', 'confirmPasswordReset']) {
+    assert.match(source, new RegExp(action), `${action} is not connected`);
+  }
+  assert.doesNotMatch(source, /requestLoginCode|confirmLogin/);
+  assert.match(page, /autocomplete="current-password"/);
+  assert.match(page, /autocomplete="new-password"/);
+  assert.match(page, /data-start-reset/);
+});
+
+test('portal help and support stay inside the authenticated page', () => {
+  const page = read('portal/index.html');
+  const source = read('portal/portal.js');
+  assert.doesNotMatch(page, /href="\.\.\/#(?:preguntas|contacto)"/);
+  assert.match(page, /data-help-dialog/);
+  assert.match(page, /data-portal-support-form/);
+  assert.match(source, /submitContact/);
+  assert.match(source, /requestTwoFactorSetup/);
+  assert.match(source, /disableTwoFactor/);
 });
 
 test('portal sessions survive navigation and expire only after inactivity or backend expiry', () => {
@@ -85,7 +109,7 @@ test('the informational hero cards do not cover the mobile overview card', () =>
 
 test('versioned assets prevent mobile browsers from keeping stale layouts', () => {
   for (const page of ['index.html', 'portal/index.html', 'admin/index.html']) {
-    assert.match(read(page), /\.(?:css|js)\?v=1\.1\.3/);
+    assert.match(read(page), /\.(?:css|js)\?v=1\.2\.0/);
   }
 });
 

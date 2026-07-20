@@ -321,6 +321,8 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 .check-field { grid-template-columns: 19px 1fr; align-items: start; gap: 10px; font-weight: 540; }
 .check-field input { width: 18px; height: 18px; margin-top: 2px; }
 .check-field a { color: var(--blue-dark); }
+.field-help { display: block; margin-top: -8px; color: var(--ink-soft); font-size: 12px; line-height: 1.45; }
+[data-reset-password-fields] { display: grid; gap: 16px; }
 .code-input { height: 62px; text-align: center; font-size: 28px; font-weight: 780; letter-spacing: 0.35em; padding-left: calc(13px + 0.35em); }
 .dialog-status { min-height: 22px; margin-top: 16px; }
 
