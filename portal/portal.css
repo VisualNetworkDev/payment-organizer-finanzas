@@ -48,6 +48,7 @@
 .code-panel .button { margin-top: 14px; }
 
 @media (max-width: 700px) {
+  .portal-header { position: static; }
   .feature-entitlement-list { grid-template-columns: 1fr; }
   .portal-header-actions .theme-toggle-label { display: none; }
 }

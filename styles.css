@@ -477,6 +477,9 @@ html[data-theme="dark"] .button-danger { border-color: #72404a; background: #341
   .header-actions.is-open { display: flex; }
   .hero { min-height: 0; padding-top: 76px; }
   .hero h1 { font-size: clamp(45px, 10vw, 68px); }
+  /* The status callouts are desktop decoration. Keeping them out of compact
+     layouts prevents them from covering the overview card on phones/tablets. */
+  .floating-card { display: none; }
   .process-grid, .faq-grid, .contact-grid, .privacy-panel { grid-template-columns: 1fr; }
   .section-heading-sticky, .faq-grid .section-heading { position: static; }
   .privacy-panel { padding: 42px 34px; }
@@ -501,9 +504,6 @@ html[data-theme="dark"] .button-danger { border-color: #72404a; background: #341
   .overview-card header img { width: 42px; height: 42px; }
   .schedule-list > div { grid-template-columns: 40px 1fr auto; padding: 10px; }
   .schedule-date { width: 38px; height: 38px; }
-  /* Decorative status cards are hidden on narrow screens so they never cover
-     the primary overview card or the hero copy. */
-  .floating-card { display: none; }
   .feature-grid, .plans-grid { grid-template-columns: 1fr; }
   .feature-card { min-height: 240px; }
   .feature-card h3 { margin-top: 42px; }

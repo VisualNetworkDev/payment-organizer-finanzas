@@ -80,6 +80,13 @@ test('the informational hero cards do not cover the mobile overview card', () =>
   const source = read('styles.css');
   assert.match(source, /\.floating-card \{ display: none; \}/);
   assert.doesNotMatch(source, /\.floating-card-left \{ bottom: 20px; left: 4px; \}/);
+  assert.match(read('portal/portal.css'), /\.portal-header \{ position: static; \}/);
+});
+
+test('versioned assets prevent mobile browsers from keeping stale layouts', () => {
+  for (const page of ['index.html', 'portal/index.html', 'admin/index.html']) {
+    assert.match(read(page), /\.(?:css|js)\?v=1\.1\.3/);
+  }
 });
 
 test('public plan comparison names only implemented Premium features', () => {
